@@ -1108,6 +1108,7 @@ _register_kind(
         "webgate.ec.europa.eu",
     ),
     skill_name=None,
+    skill_exemption="#320 paid/gated and sanctions connector skill backfill",
     description="OFAC SDN + UK sanctions lists (local index, no auth)",
     optional_payload_knobs="—",
     example_query="Wagner Group",

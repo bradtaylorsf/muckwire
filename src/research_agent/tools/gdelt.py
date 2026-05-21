@@ -368,7 +368,7 @@ _register_kind(
     search_fn=search,
     fetch_fn=fetch,
     host_patterns=("api.gdeltproject.org",),
-    skill_name=None,
+    skill_name="gdelt",
     description=(
         "GDELT — Global news event aggregator, no `site:` operator (no auth)"
     ),

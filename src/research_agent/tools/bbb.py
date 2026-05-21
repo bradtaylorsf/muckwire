@@ -442,7 +442,7 @@ _register_kind(
     search_fn=search,
     fetch_fn=fetch,
     host_patterns=("www.bbb.org", "bbb.org"),
-    skill_name=None,
+    skill_name="bbb",
     description=(
         "Better Business Bureau profiles + ratings (Playwright, no auth)"
     ),

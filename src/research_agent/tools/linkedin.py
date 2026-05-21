@@ -910,6 +910,7 @@ _register_kind(
     fetch_fn=fetch,
     host_patterns=("linkedin.com", "www.linkedin.com"),
     skill_name=None,
+    skill_exemption="#320 paid/gated connector skill backfill",
     description=(
         "LinkedIn person/company lookup via Proxycurl or Lix — requires"
         " broker key"

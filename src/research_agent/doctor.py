@@ -524,14 +524,59 @@ def check_task_kind_registry_coherence() -> CheckResult:
         )
 
 
+def check_registry_contract_coherence() -> CheckResult:
+    """Assert registered connector contracts are importable and planner-visible."""
+    name = "registry_contract_coherence"
+    try:
+        import importlib
+
+        import research_agent.tools  # noqa: F401 - populate the connector registry
+        from research_agent.tools._registry import iter_kinds
+
+        problems: list[str] = []
+        required_summaries: list[str] = []
+        for entry in iter_kinds():
+            fields = set(entry.payload_schema.model_fields)
+            missing_base = {"query", "sub_question"} - fields
+            if missing_base:
+                problems.append(
+                    f"{entry.name} payload schema missing base fields: {sorted(missing_base)}"
+                )
+            module = importlib.import_module(f"research_agent.tools.{entry.module_name}")
+            if not hasattr(module, "search"):
+                problems.append(f"{entry.name} module {entry.module_name} has no search()")
+            required = ", ".join(entry.required_payload_fields) or "none"
+            required_summaries.append(f"{entry.name} required={required}")
+
+        if problems:
+            return CheckResult(
+                name,
+                "fail",
+                required=True,
+                detail="; ".join(problems),
+            )
+        detail = (
+            f"{len(required_summaries)} connector contract(s) expose required fields; "
+            + "; ".join(required_summaries[:8])
+        )
+        if len(required_summaries) > 8:
+            detail += f"; +{len(required_summaries) - 8} more"
+        return CheckResult(name, "ok", required=True, detail=detail)
+    except Exception as exc:  # noqa: BLE001
+        return CheckResult(
+            name,
+            "fail",
+            required=True,
+            detail=f"coherence check raised {type(exc).__name__}: {exc}",
+        )
+
+
 def check_registry_skill_coherence() -> list[CheckResult]:
     """Assert each registered kind's skill file exists and parses.
 
     Issue #223: every connector PR ships a ``skills/connectors/<name>.md``
-    file (per #211/#212). Kinds with ``skill_name=None`` are grandfathered
-    from the existing-connector skills backfill — they ``skip`` rather than
-    fail. Kinds whose ``skill_name`` is set but the file is missing are a
-    hard ``fail`` (the planner would fall back to a description-only path).
+    file (per #211/#212). Issue #317 makes missing coverage a hard failure
+    unless the registry entry carries an explicit issue-linked exemption.
     """
     from research_agent.skills.loader import SkillParseError, _parse, _skills_dir
     from research_agent.tools._registry import iter_kinds
@@ -539,42 +584,58 @@ def check_registry_skill_coherence() -> list[CheckResult]:
     results: list[CheckResult] = []
     for entry in iter_kinds():
         row = f"registry_skill:{entry.name}"
+        expected_name = entry.expected_skill_name
+        expected_path = _skills_dir("connectors") / f"{expected_name}.md"
         if entry.skill_name is None:
-            results.append(
-                CheckResult(
-                    row,
-                    "skip",
-                    required=False,
-                    detail=(
-                        f"{entry.name} grandfathered (skill_name=None);"
-                        " backfill pending"
-                    ),
-                )
+            base_detail = (
+                f"kind={entry.name}; short_name={entry.short_name}; "
+                f"module_name={entry.module_name}; expected="
+                f"skills/connectors/{expected_name}.md"
             )
-            continue
-        path = _skills_dir("connectors") / f"{entry.skill_name}.md"
-        if not path.exists():
+            if entry.skill_exemption:
+                results.append(
+                    CheckResult(
+                        row,
+                        "skip",
+                        required=False,
+                        detail=f"{base_detail}; exemption={entry.skill_exemption}",
+                    )
+                )
+                continue
             results.append(
                 CheckResult(
                     row,
                     "fail",
                     required=True,
                     detail=(
-                        f"missing skills/connectors/{entry.skill_name}.md"
-                        f" for kind {entry.name}"
+                        f"{base_detail}; missing skill_name and no documented exemption"
+                    ),
+                )
+            )
+            continue
+        if not expected_path.exists():
+            results.append(
+                CheckResult(
+                    row,
+                    "fail",
+                    required=True,
+                    detail=(
+                        f"missing skills/connectors/{expected_name}.md"
+                        f" for kind {entry.name}; short_name={entry.short_name};"
+                        f" module_name={entry.module_name}; expected={expected_path}"
                     ),
                 )
             )
             continue
         try:
-            _parse("connectors", entry.skill_name, path)
+            _parse("connectors", expected_name, expected_path)
         except SkillParseError as exc:
             results.append(
                 CheckResult(
                     row,
                     "fail",
                     required=True,
-                    detail=f"{path}: {exc}",
+                    detail=f"{expected_path}: {exc}",
                 )
             )
             continue
@@ -583,7 +644,7 @@ def check_registry_skill_coherence() -> list[CheckResult]:
                 row,
                 "ok",
                 required=True,
-                detail=f"skills/connectors/{entry.skill_name}.md parses",
+                detail=f"skills/connectors/{expected_name}.md parses",
             )
         )
     return results
@@ -602,7 +663,7 @@ def check_registry_skill_summary_coherence(
     try:
         detail_rows = rows if rows is not None else check_registry_skill_coherence()
         failures = [row for row in detail_rows if row.required and row.status == "fail"]
-        skipped = [row for row in detail_rows if row.status == "skip"]
+        exempted = [row for row in detail_rows if row.status == "skip"]
         ok_count = sum(1 for row in detail_rows if row.status == "ok")
         if failures:
             failed_names = ", ".join(row.name for row in failures)
@@ -618,7 +679,7 @@ def check_registry_skill_summary_coherence(
             required=True,
             detail=(
                 f"{ok_count} connector skill file(s) parse;"
-                f" {len(skipped)} grandfathered skip(s)"
+                f" {len(exempted)} documented exemption(s)"
             ),
         )
     except Exception as exc:  # noqa: BLE001
@@ -680,6 +741,7 @@ def run_all_checks(
     results.extend(check_sanctions_refresh())
     results.append(check_planner_allowlist_coherence())
     results.append(check_task_kind_registry_coherence())
+    results.append(check_registry_contract_coherence())
     registry_skill_rows = check_registry_skill_coherence()
     results.append(check_registry_skill_summary_coherence(registry_skill_rows))
     results.extend(registry_skill_rows)

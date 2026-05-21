@@ -562,6 +562,50 @@ def _emit_plan_created(job: Job, plan: Plan, *, tier: str, kind: str) -> None:
     )
 
 
+def _validate_direct_connector_spec(job: Job, spec: TaskSpec, *, index: int) -> TaskSpec:
+    """Validate/normalize a planner-emitted direct connector task before enqueue."""
+    import research_agent.tools  # noqa: F401 - populate connector registry
+    from research_agent.tools._registry import is_registered, validate_payload_contract
+
+    if not is_registered(spec.kind):
+        return spec
+
+    result = validate_payload_contract(str(spec.kind), spec.payload)
+    if not result.valid:
+        emit(
+            job,
+            "ERROR",
+            "planner",
+            "connector_contract_rejected",
+            {
+                "stage": "pre_enqueue",
+                "plan_task_index": index,
+                "kind": spec.kind,
+                "errors": list(result.errors),
+                "message": result.repair_message,
+            },
+        )
+        raise PlanParseError(result.repair_message)
+
+    if result.repaired:
+        emit(
+            job,
+            "INFO",
+            "planner",
+            "connector_contract_repaired",
+            {
+                "stage": "pre_enqueue",
+                "plan_task_index": index,
+                "kind": spec.kind,
+                "before": spec.payload,
+                "after": result.payload,
+            },
+        )
+        return spec.model_copy(update={"payload": result.payload})
+
+    return spec
+
+
 def _enqueue_plan_tasks(job: Job, plan: Plan) -> list[int]:
     """Persist ``plan.task_template`` into the tasks queue.
 
@@ -594,6 +638,10 @@ def _enqueue_plan_tasks(job: Job, plan: Plan) -> list[int]:
         ]
     else:
         specs = list(plan.task_template)
+    specs = [
+        _validate_direct_connector_spec(job, spec, index=index)
+        for index, spec in enumerate(specs)
+    ]
     return enqueue(job, specs, plan.version)
 
 

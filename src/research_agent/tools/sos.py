@@ -723,7 +723,7 @@ _register_kind(
         "search.sunbiz.org",
         "apps.dos.ny.gov",
     ),
-    skill_name=None,
+    skill_name="sos",
     description=(
         "State Secretary-of-State business entity filings (Playwright; CA"
         " wired, others stubs)"

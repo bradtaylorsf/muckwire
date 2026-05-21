@@ -688,7 +688,7 @@ _register_kind(
         "www.myfloridalicense.com",
         "www.dos.ny.gov",
     ),
-    skill_name=None,
+    skill_name="licensing",
     description=(
         "State contractor / licensing-board lookups (Playwright; CA wired,"
         " others stubs)"

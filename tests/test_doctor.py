@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -446,6 +447,13 @@ def test_check_task_kind_registry_coherence_passes_for_live_registry() -> None:
     assert result.required is True
 
 
+def test_check_registry_contract_coherence_passes_for_live_registry() -> None:
+    result = doctor.check_registry_contract_coherence()
+    assert result.status == "ok", result.detail
+    assert result.required is True
+    assert "connector contract(s) expose required fields" in result.detail
+
+
 def test_check_planner_allowlist_coherence_flags_orphan(monkeypatch) -> None:
     """A kind in the allowlist that isn't registered is a hard fail.
 
@@ -480,8 +488,9 @@ def test_check_planner_allowlist_coherence_flags_missing_table_row(monkeypatch) 
     def _truncated() -> dict[str, str]:
         out = real()
         out["direct_kinds_table"] = (
-            "| Kind | What it covers | Optional payload knobs | Example query |\n"
-            "|---|---|---|---|"
+            "| Kind | What it covers | Required payload fields | Optional payload knobs |"
+            " Skill | Example query |\n"
+            "|---|---|---|---|---|---|"
         )  # header only, zero rows
         return out
 
@@ -492,14 +501,9 @@ def test_check_planner_allowlist_coherence_flags_missing_table_row(monkeypatch) 
     assert "no Direct-kinds-table row" in result.detail
 
 
-def test_check_registry_skill_coherence_skips_grandfathered() -> None:
-    """Kinds with ``skill_name=None`` produce ``skip`` rows, not ``fail``."""
+def test_check_registry_skill_coherence_reports_live_registry() -> None:
     rows = doctor.check_registry_skill_coherence()
     by_name = {r.name: r for r in rows}
-    # ``bbb_search`` is grandfathered (skill_name=None in the live registry).
-    skipped = by_name["registry_skill:bbb_search"]
-    assert skipped.status == "skip"
-    assert "grandfathered" in skipped.detail
     # ``congress_search`` ships a skill — must be ok.
     ok_row = by_name["registry_skill:congress_search"]
     assert ok_row.status == "ok"
@@ -513,6 +517,76 @@ def test_check_registry_skill_coherence_skips_grandfathered() -> None:
     assert openlibrary_row.status == "ok"
 
 
+def test_check_registry_skill_coherence_skips_documented_exemption(
+    monkeypatch, tmp_path
+) -> None:
+    from research_agent.skills import loader as skills_loader
+    from research_agent.tools import _registry
+
+    (tmp_path / "skills" / "connectors").mkdir(parents=True)
+    monkeypatch.setattr(
+        skills_loader, "_skills_dir", lambda category: tmp_path / "skills" / category
+    )
+
+    fake_entry = _registry.KindEntry(
+        name="pending_search",
+        payload_schema=_registry.BaseSearchPayload,
+        search_fn=lambda *a, **kw: None,
+        fetch_fn=None,
+        host_patterns=(),
+        skill_name=None,
+        description="",
+        optional_payload_knobs="",
+        example_query="",
+        module_name="pending_module",
+        skill_exemption="#999 pending skill",
+    )
+    monkeypatch.setattr(_registry, "iter_kinds", lambda: [fake_entry])
+
+    [row] = doctor.check_registry_skill_coherence()
+    assert row.status == "skip"
+    assert row.required is False
+    assert "kind=pending_search" in row.detail
+    assert "short_name=pending" in row.detail
+    assert "module_name=pending_module" in row.detail
+    assert "skills/connectors/pending.md" in row.detail
+    assert "#999 pending skill" in row.detail
+
+
+def test_check_registry_skill_coherence_fails_without_skill_or_exemption(
+    monkeypatch, tmp_path
+) -> None:
+    from research_agent.skills import loader as skills_loader
+    from research_agent.tools import _registry
+
+    (tmp_path / "skills" / "connectors").mkdir(parents=True)
+    monkeypatch.setattr(
+        skills_loader, "_skills_dir", lambda category: tmp_path / "skills" / category
+    )
+
+    fake_entry = _registry.KindEntry(
+        name="ghost_search",
+        payload_schema=_registry.BaseSearchPayload,
+        search_fn=lambda *a, **kw: None,
+        fetch_fn=None,
+        host_patterns=(),
+        skill_name=None,
+        description="",
+        optional_payload_knobs="",
+        example_query="",
+        module_name="ghost_module",
+    )
+    monkeypatch.setattr(_registry, "iter_kinds", lambda: [fake_entry])
+
+    [row] = doctor.check_registry_skill_coherence()
+    assert row.status == "fail"
+    assert row.required is True
+    assert "missing skill_name and no documented exemption" in row.detail
+    assert "kind=ghost_search" in row.detail
+    assert "module_name=ghost_module" in row.detail
+    assert "skills/connectors/ghost.md" in row.detail
+
+
 def test_check_registry_skill_summary_coherence_passes() -> None:
     rows = [
         doctor.CheckResult("registry_skill:ok_search", "ok", required=True, detail="ok"),
@@ -520,7 +594,7 @@ def test_check_registry_skill_summary_coherence_passes() -> None:
             "registry_skill:old_search",
             "skip",
             required=False,
-            detail="grandfathered",
+            detail="exempted",
         ),
     ]
 
@@ -530,6 +604,7 @@ def test_check_registry_skill_summary_coherence_passes() -> None:
     assert result.status == "ok"
     assert result.required is True
     assert "1 connector skill file(s) parse" in result.detail
+    assert "1 documented exemption(s)" in result.detail
 
 
 def test_check_registry_skill_summary_coherence_fails_on_required_row() -> None:
@@ -584,6 +659,55 @@ def test_check_registry_skill_coherence_fails_when_skill_file_missing(
     assert row.status == "fail"
     assert row.required is True
     assert "missing skills/connectors/ghost.md" in row.detail
+    assert "kind ghost_search" in row.detail
+    assert "module_name=ghost" in row.detail
+
+
+def test_check_registry_skill_coherence_fails_on_malformed_frontmatter(
+    monkeypatch, tmp_path
+) -> None:
+    from research_agent.skills import loader as skills_loader
+    from research_agent.tools import _registry
+
+    skill_dir = tmp_path / "skills" / "connectors"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "bad.md").write_text("no frontmatter\n", encoding="utf-8")
+    monkeypatch.setattr(
+        skills_loader, "_skills_dir", lambda category: tmp_path / "skills" / category
+    )
+
+    fake_entry = _registry.KindEntry(
+        name="bad_search",
+        payload_schema=_registry.BaseSearchPayload,
+        search_fn=lambda *a, **kw: None,
+        fetch_fn=None,
+        host_patterns=(),
+        skill_name="bad",
+        description="",
+        optional_payload_knobs="",
+        example_query="",
+        module_name="bad",
+    )
+    monkeypatch.setattr(_registry, "iter_kinds", lambda: [fake_entry])
+
+    [row] = doctor.check_registry_skill_coherence()
+    assert row.status == "fail"
+    assert "missing a YAML frontmatter" in row.detail
+
+
+def test_connector_skill_template_documents_required_sections() -> None:
+    template = Path("docs/CONNECTOR_SKILL_TEMPLATE.md").read_text(encoding="utf-8")
+    for section in (
+        "## Official documentation",
+        "## Auth and cost",
+        "## Required payload fields",
+        "## Knobs available",
+        "## Valid payload examples",
+        "## Request and pagination pattern",
+        "## Failure modes",
+        "## Evidence shape",
+    ):
+        assert section in template
 
 
 def test_run_all_checks_includes_registry_coherence(tmp_path) -> None:
