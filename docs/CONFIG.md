@@ -52,3 +52,41 @@ under `fragments/<section>/NNNN.{md,json}` and mirrored in SQLite, so resume and
 final-synthesis paths reassemble `report.md` from the latest fragments after a
 restart. Logs include a `synthesis_mode` event with `mode="fragments"` or
 `mode="legacy"` for operator visibility.
+
+## Candidate Roster Handoff Backtest
+
+The 2026 federal candidate-roster regression runs without live network access:
+
+```bash
+UV_CACHE_DIR=.uv-cache uv run pytest tests/test_candidate_roster_backtest.py -q
+```
+
+It covers planner handoff failures before enqueue: grouped
+`state_election_search` tasks without `state`, full state names repaired to
+postal abbreviations, empty FEC candidate searches repaired to
+`kind=candidates_enumerate` when structured filters exist, and rejected when
+they do not.
+
+When LM Studio and live source access are available, run a short local smoke
+from the repo root:
+
+```bash
+UV_CACHE_DIR=.uv-cache uv run research start \
+  --skip-intake \
+  --local \
+  --max-tasks 10 \
+  --goal "As of May 15, 2026, create a complete sourced state-by-state list of every U.S. House and Senate candidate in all 50 states."
+```
+
+Then inspect the job events for connector-contract repairs/rejections and
+cadence diagnostics:
+
+```bash
+jq 'select(.kind=="connector_contract_rejected" or .kind=="connector_contract_repaired" or .kind=="warning" or (.kind=="checkpoint" and (.payload.checkpoint_kind=="synthesis_done" or .payload.checkpoint_kind=="critique_done")))' \
+  jobs/<job-id>/events.jsonl
+```
+
+The smoke is healthy when malformed connector tasks are absent or logged as
+contract repairs/rejections before dispatch, local model routing is visible in
+the daemon logs, and any synthesis/critique failure appears as a `warning`
+event instead of a quiet pending-task stall.

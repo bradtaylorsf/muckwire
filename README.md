@@ -134,7 +134,7 @@ linkage, same example query. The table is generated from
 | `iwm_search` | Imperial War Museums public collections: photographs, sound/oral histories, documents, film, objects (Playwright scrape, no auth) | — | `max_results`, `object_category`, `related_period`, `records_with_media`, `style`, `page_size` | `iwm` | `Battle of Britain` |
 | `lda_search` | Senate Lobbying Disclosure Act filings (registrants, contributions) | — | `kind: filings\|registrants\|contributions` | `lda` | `Heritage Foundation` |
 | `licensing_search` | State contractor / licensing-board lookups (Playwright; CA wired, others stubs) | — | `state: CA\|TX\|FL\|NY` | `licensing` | `SBI Builders` |
-| `linkedin_search` | LinkedIn person/company lookup via Proxycurl or Lix — requires broker key | — | `kind: person\|company` | exempt: #320 paid/gated connector skill backfill | `Sundar Pichai` |
+| `linkedin_search` | LinkedIn person/company lookup via broker; paid/TOS-sensitive and Proxycurl is shut down | — | `kind: person\|company`, `max_results` | `linkedin` | `Sundar Pichai` |
 | `littlesis_search` | Power-mapping database — entities, donations, board seats, family ties (lead, not evidence) | — | `kind: entities\|relationships` | `littlesis` | `Peter Thiel` |
 | `loc_search` | Library of Congress digital collections, including Chronicling America through the unified loc.gov API | — | `collection: chronicling-america\|prints\|manuscripts\|recordings\|maps`, `page: <int>` | `loc` | `battle of algiers` |
 | `nara_search` | US National Archives Catalog OPA v2 records, declassified federal records, military records, photos; requires NARA_API_KEY | — | `available_online`, `type_of_materials`, `result_types`, `record_group`, `page` | `nara` | `Vietnam War declassified` |
@@ -143,8 +143,8 @@ linkage, same example query. The table is generated from
 | `opencorporates_search` | Global company registry — requires `OPENCORPORATES_API_KEY` | — | `jurisdiction: us_ca\|gb\|...` | `opencorporates` | `Acme Holdings` |
 | `openlibrary_search` | Open Library book metadata, ISBN/OCLC/LCCN identifiers, and Internet Archive scan IDs through search.json | — | `max_results` | `openlibrary` | `Pullman Strike 1894` |
 | `persee_search` | Persee French academic journals in humanities and social sciences (Playwright scrape, no auth) | — | `max_results` | `persee` | `guerre d'Algerie` |
-| `sanctions_search` | OFAC SDN + UK sanctions lists (local index, no auth) | — | — | exempt: #320 paid/gated and sanctions connector skill backfill | `Wagner Group` |
-| `scholar_search` | Google Scholar via SerpAPI — requires `SERPAPI_KEY` | — | `kind: case_law\|articles` | exempt: #320 paid/gated connector skill backfill | `Section 230 appellate` |
+| `sanctions_search` | OFAC sanctions screening plus legacy EU/UK local rows; check source freshness before compliance use | — | `max_results`, `kinds: [SDN|EU|UK]` | `sanctions` | `Wagner Group` |
+| `scholar_search` | Google Scholar via SerpAPI — requires `SERPAPI_KEY` | — | `kind: case_law\|articles`, `max_results` | `scholar` | `Section 230 appellate` |
 | `si_search` | Smithsonian Open Access digitized collection objects, museum artifacts, images, 3D assets, and object metadata via api.data.gov | — | `max_results` | `smithsonian` | `Apollo 11` |
 | `sos_search` | State Secretary-of-State business entity filings (Playwright; CA wired, others stubs) | — | `state: CA\|DE\|NV\|...` | `sos` | `Acme Corp` |
 | `state_election_search` | Official state election candidate roster sources and portals | `state` | `office`, `cycle`, `max_results` | `state_election` | `2026 House candidates` |
@@ -281,9 +281,9 @@ that list, so there is no drift.
 | `DPLA_API_KEY` | no | Digital Public Library of America API key — used by `tools/dpla.py`. Request with `curl -X POST https://api.dp.la/v2/api_key/<your-email>`; the emailed 32-character key is sent as `?api_key=<key>`. Connector and smoke skip cleanly when unset. |
 | `EUROPEANA_API_KEY` | no | Europeana API key — used by `tools/europeana.py`. Create a free key in your Europeana account under Manage API keys (migrated there on 2025-05-28). Sent as `?wskey=<key>` to `https://api.europeana.eu/api/v2/search.json`; connector enforces 1 RPS and smoke skips cleanly when unset. |
 | `SERPAPI_KEY` | no | SERPAPI key — required by `tools/scholar.py` (Google Scholar engine, case law + academic). Plans start at $75/mo for 5k searches across all engines; per-query ≈ $0.015. Sign up at <https://serpapi.com/>. |
-| `LINKEDIN_DATA_API_KEY` | no | LinkedIn data-broker key (default broker: Proxycurl) — required by `tools/linkedin.py`. Per-lookup ≈ $0.01–$0.05; gate fetches behind explicit planner tasks. Sign up at <https://nubela.co/proxycurl/>. |
-| `LINKEDIN_BROKER` | no | Broker recipe used by `tools/linkedin.py`. `proxycurl` (default) or `lix`; switching to `lix` consults `LIX_API_KEY` instead of `LINKEDIN_DATA_API_KEY`. |
-| `LIX_API_KEY` | no | Lix data-broker key (<https://lix-it.com/>) — only consulted when `LINKEDIN_BROKER=lix`. Similar per-lookup pricing to Proxycurl. |
+| `LINKEDIN_DATA_API_KEY` | no | Legacy Proxycurl key read by `tools/linkedin.py` when `LINKEDIN_BROKER=proxycurl`. Proxycurl's official pages now say the service is shut down; use only when an operator confirms legacy access. |
+| `LINKEDIN_BROKER` | no | Broker recipe used by `tools/linkedin.py`. `proxycurl` (legacy default, currently shut down per Nubela) or `lix`; switching to `lix` consults `LIX_API_KEY` instead of `LINKEDIN_DATA_API_KEY`. |
+| `LIX_API_KEY` | no | Lix data-broker key (<https://lix-it.com/>) — only consulted when `LINKEDIN_BROKER=lix`. Paid/gated; review budget and terms before planner use. |
 | `RESEARCH_REDDIT_USER_AGENT` | no | Override the User-Agent `tools/reddit.py` sends. Reddit's anonymous JSON endpoint 403s the project's descriptive UA; the connector defaults to a Chrome UA. Set this when you have a registered OAuth app or want a different override than `RESEARCH_USER_AGENT` (consulted next in the fallback chain). |
 | `RESEARCH_MODELS_CONFIG` | no | Path to the models routing YAML the daemon loads. Defaults to `config/models.yaml` relative to cwd. Set when running out-of-tree or pointing at a packaged config. |
 | `RESEARCH_DB_PATH` | no | Override the SQLite index path the daemon uses. Unset uses `data/index.sqlite`. Useful for isolating runs under test or pointing at a writable disk. |

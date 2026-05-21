@@ -29,6 +29,7 @@ ISSUE_318_CONNECTOR_SKILLS = (
     "usaspending",
 )
 ISSUE_319_CONNECTOR_SKILLS = ("bbb", "calaccess", "licensing")
+ISSUE_320_CONNECTOR_SKILLS = ("linkedin", "scholar", "sanctions")
 
 STRATEGY_SKILLS = (
     "modern-policy-era-filtering",
@@ -254,6 +255,122 @@ def test_issue_319_site_navigation_source_boundaries() -> None:
     assert "NY" in licensing
     assert "stubs" in licensing
     assert "unsupported" in licensing
+
+
+@pytest.mark.parametrize("name", ISSUE_320_CONNECTOR_SKILLS)
+def test_issue_320_connector_skill_loads(name: str) -> None:
+    body = load_skill("connectors", name)
+    assert len(body) > 500
+    entries = {entry["name"]: entry for entry in list_skills("connectors")}
+    assert entries[name]["description"]
+    assert entries[name]["when_to_use"]
+    assert entries[name]["when_not_to_use"]
+
+
+@pytest.mark.parametrize("name", ISSUE_320_CONNECTOR_SKILLS)
+@pytest.mark.parametrize("section", ISSUE_318_REQUIRED_SECTIONS)
+def test_issue_320_connector_skill_has_required_sections(name: str, section: str) -> None:
+    body = load_skill("connectors", name)
+    assert re.search(rf"^##\s+{re.escape(section)}\s*$", body, re.MULTILINE)
+
+
+@pytest.mark.parametrize("name", ISSUE_320_CONNECTOR_SKILLS)
+def test_issue_320_connector_skill_examples_validate(name: str) -> None:
+    from research_agent.tools._registry import get_kind, validate_payload_contract
+
+    entry = get_kind(f"{name}_search")
+    assert entry is not None
+    assert entry.skill_name == name
+
+    body = load_skill("connectors", name)
+    examples = _skill_payload_examples(body)
+    assert examples, f"{name}: expected at least one YAML payload example"
+    for example in examples:
+        assert example["kind"] == entry.name
+        payload = example["payload"]
+        assert isinstance(payload, dict)
+        result = validate_payload_contract(entry.name, payload)
+        assert result.valid, result.repair_message
+
+
+def test_issue_320_connector_skills_cite_current_official_docs() -> None:
+    expected = {
+        "linkedin": (
+            "https://nubela.co/proxycurl/auth/register.html",
+            "https://nubela.co/blog/what-is-proxycurl-api-now-in-2026-im-the-founder/",
+            "https://lix-it.com/docs/",
+            "https://lix-it.com/pages/linkedin-api",
+        ),
+        "scholar": (
+            "https://serpapi.com/google-scholar-api",
+            "https://serpapi.com/pricing",
+        ),
+        "sanctions": (
+            "https://ofac.treasury.gov/sanctions-list-service",
+            "https://finance.ec.europa.eu/eu-and-world/sanctions-restrictive-measures/overview-sanctions-and-related-resources_en",
+            "https://www.gov.uk/government/publications/the-uk-sanctions-list",
+            "https://sanctionssearchapp.ofsi.hmtreasury.gov.uk/",
+        ),
+    }
+    for name, urls in expected.items():
+        body = load_skill("connectors", name)
+        for url in urls:
+            assert url in body
+
+
+def test_issue_320_paid_and_sanctions_caveats_are_explicit() -> None:
+    linkedin = load_skill("connectors", "linkedin")
+    assert "Proxycurl is no longer in service" in linkedin
+    assert "NinjaPear is not a drop-in replacement implemented here" in linkedin
+    assert "paid/gated" in linkedin
+
+    scholar = load_skill("connectors", "scholar")
+    assert "SERPAPI_KEY" in scholar
+    assert "openalex_search" in scholar
+    assert "no_cache" in scholar
+
+    sanctions = load_skill("connectors", "sanctions")
+    assert "UK Sanctions List is now the authoritative source" in sanctions
+    assert "OFSI Consolidated List" in sanctions
+    assert "2026-01-28" in sanctions
+    assert "EU rows as stale" in sanctions
+
+
+def test_issue_320_payload_contract_rejects_invalid_modes() -> None:
+    from research_agent.tools._registry import validate_payload_contract
+
+    linkedin_result = validate_payload_contract(
+        "linkedin_search",
+        {
+            "query": "Jane Doe",
+            "sub_question": "Find a LinkedIn lead",
+            "kind": "profile",
+        },
+    )
+    assert linkedin_result.valid is False
+    assert "kind" in linkedin_result.repair_message
+
+    scholar_result = validate_payload_contract(
+        "scholar_search",
+        {
+            "query": "Section 230",
+            "sub_question": "Find case law",
+            "kind": "cases",
+        },
+    )
+    assert scholar_result.valid is False
+    assert "kind" in scholar_result.repair_message
+
+    sanctions_result = validate_payload_contract(
+        "sanctions_search",
+        {
+            "query": "Wagner Group",
+            "sub_question": "Screen sanctions",
+            "kinds": ["OFSI"],
+        },
+    )
+    assert sanctions_result.valid is False
+    assert "kinds" in sanctions_result.repair_message
 
 
 def test_congress_skill_carries_canonical_motivator() -> None:

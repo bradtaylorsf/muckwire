@@ -34,7 +34,7 @@ import logging
 import re
 import time
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import urlparse
 
 import httpx
@@ -899,7 +899,7 @@ KIND = "linkedin_search"
 
 
 class _PayloadSchema(_BaseSearchPayload):
-    kind: str | None = None
+    kind: Literal["person", "company"] | None = None
     max_results: int | None = None
 
 
@@ -909,13 +909,11 @@ _register_kind(
     search_fn=search,
     fetch_fn=fetch,
     host_patterns=("linkedin.com", "www.linkedin.com"),
-    skill_name=None,
-    skill_exemption="#320 paid/gated connector skill backfill",
     description=(
-        "LinkedIn person/company lookup via Proxycurl or Lix — requires"
-        " broker key"
+        "LinkedIn person/company lookup via broker; paid/TOS-sensitive and"
+        " Proxycurl is shut down"
     ),
-    optional_payload_knobs="`kind: person\\|company`",
+    optional_payload_knobs="`kind: person\\|company`, `max_results`",
     example_query="Sundar Pichai",
     module_name="linkedin",
 )
