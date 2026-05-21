@@ -83,14 +83,16 @@ explicitly per #113).
 | Connector | Issue | Env var | Where to get it | Approx cost |
 |---|---|---|---|---|
 | Google Scholar via SERPAPI | #114 | `SERPAPI_KEY` | <https://serpapi.com/users/sign_up> | $75/mo for 5K queries (Scholar is one engine of many they offer) |
-| LinkedIn via Proxycurl (default broker) | #115 | `LINKEDIN_DATA_API_KEY` | <https://nubela.co/proxycurl/> → Sign up → API Key | $0.01–$0.05 per profile lookup |
-| LinkedIn via Lix (alternate broker) | #115 | `LIX_API_KEY` (set `LINKEDIN_BROKER=lix` to switch) | <https://lix-it.com/> → Sign up | Similar per-lookup pricing to Proxycurl |
+| LinkedIn via Proxycurl (legacy default broker) | #115/#320 | `LINKEDIN_DATA_API_KEY` | Proxycurl official pages now say the service is shut down; use only if an operator confirms legacy access | Historical broker pricing only |
+| LinkedIn via Lix (alternate broker) | #115/#320 | `LIX_API_KEY` (set `LINKEDIN_BROKER=lix` to switch) | <https://lix-it.com/> → Sign up | Paid/gated Lix credits; review current pricing and terms |
 
 For LinkedIn the connector is **broker-pluggable**: `LINKEDIN_BROKER`
-selects the recipe (`proxycurl` by default, or `lix`). Each broker
-reads its own key — see the rows above. Adding another broker is a
-recipe-layer change in `tools/linkedin.py`. Use whichever broker your
-wallet and TOS comfort allow.
+selects the recipe (`proxycurl` by default, or `lix`). Proxycurl is retained
+only as a legacy code path because Nubela now says it is shut down; NinjaPear
+is the successor platform but is not implemented by this connector. Each
+broker reads its own key — see the rows above. Adding another broker is a
+recipe-layer change in `tools/linkedin.py`. Use broker data only when your
+wallet, terms review, and source-provenance needs allow it.
 
 ---
 
