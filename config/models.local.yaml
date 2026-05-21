@@ -6,8 +6,8 @@
 # is intentionally empty so BudgetTracker computes cost = 0.
 #
 # Loaded models (verify with `curl -s http://localhost:1234/v1/models`):
-#   - google/gemma-4-26b-a4b   (large MoE, ~4B active — planner/synth/critique)
-#   - google/gemma-4-e4b       (efficient 4B dense — workers, summaries)
+#   - google/gemma-4-26b-a4b   (large MoE, ~4B active — planner/synth)
+#   - google/gemma-4-e4b       (efficient 4B dense — workers, summaries, critique)
 #   - text-embedding-nomic-embed-text-v1.5
 #
 # Vision tier maps to gemma-4-26b-a4b as a placeholder; image inputs will
@@ -50,9 +50,9 @@ tiers:
     purpose: Semantic search over findings + sources.
 
   # The "frontier" family stays local in this preset. Synth, critique, and
-  # planner rewrites all hit gemma-4-26b-a4b. Same model for `frontier_alt`
-  # so critique runs on the same weights as the synthesizer (loses
-  # productive disagreement, but keeps the run truly local + free).
+  # planner rewrites hit gemma-4-26b-a4b. Critique uses the faster local
+  # e4b model so hour-capped validation runs can complete multiple critique
+  # passes without spending most of the cap inside one large local call.
   frontier:
     provider: lmstudio
     model: google/gemma-4-26b-a4b
@@ -61,10 +61,10 @@ tiers:
 
   frontier_alt:
     provider: lmstudio
-    model: google/gemma-4-26b-a4b
-    timeout_s: 600
-    fallback_tier: frontier
-    purpose: Critique alt — same model as frontier in local mode.
+    model: google/gemma-4-e4b
+    timeout_s: 180
+    fallback_tier: frontier_speed
+    purpose: Critique alt — faster local model for bounded validation runs.
 
   frontier_speed:
     provider: lmstudio

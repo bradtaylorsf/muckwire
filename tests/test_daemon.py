@@ -301,7 +301,11 @@ def _patch_run_daemon_for_in_process(
     """
     monkeypatch.setenv("RESEARCH_DAEMON_SKIP_HEALTH_CHECKS", "1")
 
-    calls: dict[str, list[tuple[Any, ...]]] = {"final_synthesis": [], "run_loop": []}
+    calls: dict[str, list[tuple[Any, ...]]] = {
+        "final_synthesis": [],
+        "run_loop": [],
+        "browser_shutdown": [],
+    }
 
     async def _wrapped_run_loop(job: Job, router: Any, **kwargs: Any) -> Any:
         calls["run_loop"].append((job.id, kwargs))
@@ -318,6 +322,14 @@ def _patch_run_daemon_for_in_process(
     monkeypatch.setattr(
         "research_agent.orchestrator.synth.final_synthesis",
         _final_synth_stub,
+    )
+
+    async def _browser_shutdown_stub() -> None:
+        calls["browser_shutdown"].append(())
+
+    monkeypatch.setattr(
+        "research_agent.tools.browser.shutdown",
+        _browser_shutdown_stub,
     )
     return calls
 
@@ -470,7 +482,7 @@ async def test_run_daemon_completed_status_when_plan_is_complete(
         write_plan(job, plan_dump)
         return {"tasks_done": 1, "stopped": False, "completed": True, "cap_hit": False}
 
-    _patch_run_daemon_for_in_process(monkeypatch, run_loop_impl=_instant_run_loop)
+    calls = _patch_run_daemon_for_in_process(monkeypatch, run_loop_impl=_instant_run_loop)
 
     exit_code = await daemon.run_daemon(
         seeded_job.id,
@@ -485,6 +497,7 @@ async def test_run_daemon_completed_status_when_plan_is_complete(
         db_path=seeded_job.db_path,
     )
     assert refreshed.status == "completed"
+    assert calls["browser_shutdown"] == [()]
 
 
 @pytest.mark.asyncio

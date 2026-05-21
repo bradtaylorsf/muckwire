@@ -919,12 +919,14 @@ def test_models_yaml_ships_lmstudio_fallback_tiers() -> None:
     assert "fallback_tier" not in tiers["embeddings"]
 
 
-def test_local_models_yaml_routes_frontier_alt_to_frontier() -> None:
-    """Local critique must have a declared same-family fallback tier."""
+def test_local_models_yaml_routes_frontier_alt_to_fast_local_critic() -> None:
+    """Local critique must stay bounded enough for hour-capped validation runs."""
     cfg = load_models_config(SHIPPED_LOCAL_MODELS_YAML)
     tiers = cfg["tiers"]
     assert tiers["frontier_alt"]["provider"] == "lmstudio"
-    assert tiers["frontier_alt"].get("fallback_tier") == "frontier"
+    assert tiers["frontier_alt"]["model"] == tiers["frontier_speed"]["model"]
+    assert tiers["frontier_alt"].get("fallback_tier") == "frontier_speed"
+    assert tiers["frontier_alt"]["timeout_s"] <= tiers["frontier"]["timeout_s"]
 
 
 def _make_lmstudio_router(

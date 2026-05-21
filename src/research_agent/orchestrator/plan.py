@@ -943,6 +943,26 @@ def _load_latest_plan(job: Job) -> Plan:
     return Plan.model_validate_json(row["payload_json"])
 
 
+def _latest_subgoal_update_payload(job: Job) -> dict[str, Any] | None:
+    conn = db.connect(job.db_path)
+    try:
+        row = conn.execute(
+            "SELECT payload_json FROM events"
+            " WHERE job_id = ? AND kind = 'plan_subgoals_updated'"
+            " ORDER BY id DESC LIMIT 1",
+            (job.id,),
+        ).fetchone()
+    finally:
+        conn.close()
+    if row is None:
+        return None
+    try:
+        payload = json.loads(row["payload_json"])
+    except (TypeError, json.JSONDecodeError):
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
 def update_subgoal_done(job: Job, status_map: dict[int, str]) -> Plan:
     """Apply a synthesizer-emitted ``subgoal_status`` map to the latest plan.
 
@@ -967,7 +987,41 @@ def update_subgoal_done(job: Job, status_map: dict[int, str]) -> Plan:
         if sg.id in status_map:
             new_done_by_id[sg.id] = status_map[sg.id] in closing
 
-    if not any(new_done_by_id[sid] != prior_done[sid] for sid in new_done_by_id):
+    changed = any(new_done_by_id[sid] != prior_done[sid] for sid in new_done_by_id)
+    if not changed:
+        inconclusive = [
+            sg.id for sg in plan.subgoals if status_map.get(sg.id) == "inconclusive"
+        ]
+        prior_payload = _latest_subgoal_update_payload(job)
+        prior_inconclusive = (
+            prior_payload.get("inconclusive") if isinstance(prior_payload, dict) else None
+        )
+        try:
+            prior_inconclusive_ids = (
+                sorted(int(v) for v in prior_inconclusive)
+                if isinstance(prior_inconclusive, list)
+                else None
+            )
+        except (TypeError, ValueError):
+            prior_inconclusive_ids = None
+        already_observed = (
+            prior_inconclusive_ids == inconclusive
+            and prior_payload.get("version") == plan.version
+        )
+        if inconclusive and not already_observed:
+            emit(
+                job,
+                "INFO",
+                "planner",
+                "plan_subgoals_updated",
+                {
+                    "version": plan.version,
+                    "closed": [],
+                    "reopened": [],
+                    "inconclusive": inconclusive,
+                    "changed": False,
+                },
+            )
         return plan
 
     _assert_under_cap(job)
@@ -1006,6 +1060,7 @@ def update_subgoal_done(job: Job, status_map: dict[int, str]) -> Plan:
             "closed": closed,
             "reopened": reopened,
             "inconclusive": inconclusive,
+            "changed": True,
         },
     )
     return new_plan

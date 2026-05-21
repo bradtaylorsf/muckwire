@@ -2,8 +2,8 @@
 
 Public surface:
 
-* ``async def search(query, *, since=None, language="english", max_results=20) -> list[SearchResult]``
-  hits the DOC API ``ArtList`` mode for global news / broadcast TV transcripts.
+* ``async def search(...) -> list[SearchResult]`` hits the DOC API
+  ``ArtList`` mode for global news / broadcast TV transcripts.
 * ``async def fetch(url) -> Source | None`` — no-op delegate to ``web_fetch.fetch``.
   GDELT is purely an index; article bodies live on the source's own domain.
 * ``async def tone_timeline(query, *, since=None, language="english") -> list[dict]``
@@ -35,6 +35,8 @@ import httpx
 from research_agent import config
 from research_agent.tools._registry import (
     BaseSearchPayload as _BaseSearchPayload,
+)
+from research_agent.tools._registry import (
     register_kind as _register_kind,
 )
 from research_agent.tools.models import SearchResult, Source
@@ -97,7 +99,7 @@ async def _rate_limit_gate() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _to_timespan(since: datetime | None) -> str | None:
+def _to_timespan(since: datetime | str | None) -> str | None:
     """Convert a tz-aware datetime to GDELT's ``timespan`` token.
 
     GDELT accepts forms like ``15min``, ``1h``, ``1d``, ``2w``, ``1m``. We map
@@ -107,6 +109,18 @@ def _to_timespan(since: datetime | None) -> str | None:
     """
     if since is None:
         return None
+    if isinstance(since, str):
+        text = since.strip()
+        if not text:
+            return None
+        try:
+            since = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        except ValueError:
+            try:
+                since = datetime.strptime(text[:10], "%Y-%m-%d").replace(tzinfo=UTC)
+            except ValueError:
+                logger.warning("gdelt search ignored invalid since value: %r", since)
+                return None
     now = datetime.now(UTC)
     if since.tzinfo is None:
         since = since.replace(tzinfo=UTC)

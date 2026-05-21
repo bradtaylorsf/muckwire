@@ -1299,10 +1299,10 @@ def test_synthesize_inconclusive_status_keeps_subgoal_open(
     assert payload["inconclusive"] == [2]
 
 
-def test_synthesize_missing_fence_emits_warning_and_skips_plan_bump(
+def test_synthesize_missing_fence_defaults_subgoals_inconclusive_without_plan_bump(
     job: Job, db_path: Path, multi_subgoal_plan: Plan
 ) -> None:
-    """No structured or prose status: warning emitted, report written, plan unchanged."""
+    """No structured or prose status: warn, keep subgoals open, emit observable status."""
     _seed_findings(job, [0.6])
     router = _StubRouter(content="# Report\n\nNo fence at all.\n")
 
@@ -1316,8 +1316,17 @@ def test_synthesize_missing_fence_emits_warning_and_skips_plan_bump(
     assert len(missing) == 1
     assert missing[0]["level"] == "WARN"
 
+    defaulted = [e for e in events if e["kind"] == "synth_status_defaulted"]
+    assert len(defaulted) == 1
+    default_payload = json.loads(defaulted[0]["payload_json"])
+    assert default_payload["inconclusive"] == [1, 2, 3]
+
     updated = [e for e in events if e["kind"] == "plan_subgoals_updated"]
-    assert updated == []
+    assert len(updated) == 1
+    payload = json.loads(updated[0]["payload_json"])
+    assert payload["closed"] == []
+    assert payload["inconclusive"] == [1, 2, 3]
+    assert payload["changed"] is False
 
 
 def test_synthesize_malformed_fence_emits_warning_and_skips_plan_bump(

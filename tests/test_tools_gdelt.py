@@ -171,6 +171,20 @@ async def test_search_passes_timespan(monkeypatch):
     assert params["timespan"] == "2d"
 
 
+async def test_search_accepts_iso_string_since(monkeypatch):
+    payload = json.dumps({"articles": []})
+
+    def _get(url, params):
+        return 200, payload
+
+    captured = _patch_httpx(monkeypatch, get_responder=_get)
+
+    await gdelt.search("anything", since="2026-05-14T00:00:00Z")
+
+    params = captured["params"][0]
+    assert params["timespan"].endswith("d")
+
+
 async def test_search_http_error_returns_empty(monkeypatch):
     def _get(url, params):
         return 500, ""

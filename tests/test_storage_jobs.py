@@ -611,7 +611,8 @@ def test_archive_and_soft_reset_wipes_subfolders_and_db(
             "SELECT COUNT(*) AS c FROM fragments WHERE job_id = ?", (job.id,)
         ).fetchone()["c"]
         job_row = conn.execute(
-            "SELECT goal, status FROM jobs WHERE id = ?", (job.id,)
+            "SELECT goal, status, created_at, last_activity_at FROM jobs WHERE id = ?",
+            (job.id,),
         ).fetchone()
     finally:
         conn.close()
@@ -624,6 +625,11 @@ def test_archive_and_soft_reset_wipes_subfolders_and_db(
     assert job_row is not None
     assert job_row["goal"] == sample_intake["goal"]
     assert job_row["status"] == "pending"
+    assert job_row["created_at"] == job_row["last_activity_at"]
+    assert job.created_at == job_row["created_at"]
+
+    meta = json.loads((job.root / "job.json").read_text(encoding="utf-8"))
+    assert meta["created_at"] == job_row["created_at"]
 
 
 # ---------------------------------------------------------------------------

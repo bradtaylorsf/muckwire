@@ -486,6 +486,65 @@ async def critique(
             {"stage": tier, "error": str(exc), "budget_capped": True},
         )
         return _stub_output()
+    except Exception as exc:  # noqa: BLE001 — critique is advisory; persist a visible fallback
+        logger.warning("critique: %s tier failed: %s", tier, exc)
+        emit(
+            job,
+            "WARN",
+            "critique",
+            "warning",
+            {
+                "stage": tier,
+                "error_type": type(exc).__name__,
+                "error": str(exc),
+                "fallback_critique": True,
+            },
+        )
+        output = CritiqueOutput(
+            confidence_concerns=[
+                f"Critique model failed on {tier}: {type(exc).__name__}: {exc}"
+            ],
+            should_replan=False,
+        )
+        model_name = _model_name_for(router, tier)
+        payload_dict = output.model_dump(
+            exclude={"version", "model", "cost_usd", "md_path"}
+        )
+        version = write_critique(
+            job,
+            payload=payload_dict,
+            content=_render_critique_md(output),
+            model=f"{model_name} (fallback)",
+            cost_usd=None,
+            should_replan=False,
+        )
+        md_rel = f"critique/{version:04d}.md"
+        enriched = output.model_copy(
+            update={
+                "version": version,
+                "model": f"{model_name} (fallback)",
+                "cost_usd": None,
+                "md_path": md_rel,
+            }
+        )
+        emit(
+            job,
+            "INFO",
+            "critique",
+            "critique_written",
+            {
+                "version": version,
+                "tier": tier,
+                "requested_tier": tier,
+                "model": f"{model_name} (fallback)",
+                "should_replan": False,
+                "gaps_count": 0,
+                "replan_triggered": False,
+                "fallback": True,
+                "error_type": type(exc).__name__,
+            },
+        )
+        return enriched
 
     output = result.output
     if not isinstance(output, CritiqueOutput):

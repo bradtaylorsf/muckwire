@@ -103,13 +103,13 @@ harnesses:
 # planning and review. Each step accepts { agent?, model? }.
 pipeline:
   plan:
-    agent: claude
+    agent: codex
   implement:
     agent: codex
   test_fix:
     agent: codex
   review:
-    agent: claude
+    agent: codex
   verify:
     agent: codex
   learn:

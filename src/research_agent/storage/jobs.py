@@ -487,7 +487,7 @@ class Job:
                         intake.get("time_cap_hours"),
                         intake.get("budget_cap_usd"),
                         intake.get("aggressiveness"),
-                        self.created_at,
+                        now,
                         now,
                     ),
                 )
@@ -496,6 +496,7 @@ class Job:
 
         # Mirror reset state into job.json so disk-only consumers see it.
         meta["status"] = new_status
+        meta["created_at"] = now
         meta["last_activity_at"] = now
         meta.pop("completion_reason", None)
         _atomic_write_json(self.root / "job.json", meta)
@@ -503,6 +504,7 @@ class Job:
         self.status = new_status
         self.completion_reason = new_completion_reason
         self.intake = intake
+        self.created_at = now
 
         return archived
 

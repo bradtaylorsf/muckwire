@@ -89,6 +89,7 @@ EventKind = Literal[
     "source_list_reconciled",
     "synth_status_from_prose",
     "synth_status_missing",
+    "synth_status_defaulted",
     "error",
     "warning",
 ]

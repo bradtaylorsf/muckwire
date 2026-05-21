@@ -1219,6 +1219,12 @@ async def run_daemon(
         if inbox_task is not None:
             await _cancel_with_timeout(inbox_task, "inbox_watcher", timeout=5.0)
         await _cancel_with_timeout(progress_task, "foreground_progress_task", timeout=5.0)
+        try:
+            from research_agent.tools import browser as _browser
+
+            await asyncio.wait_for(_browser.shutdown(), timeout=10.0)
+        except Exception as exc:  # noqa: BLE001 — browser cleanup is best-effort
+            logger.warning("daemon: browser shutdown failed for job %s: %s", job.id, exc)
         if signals_installed:
             for sig in (signal.SIGTERM, signal.SIGINT):
                 try:

@@ -1280,6 +1280,16 @@ def _extract_subgoal_status(
             "subgoal_ids": sorted(subgoal_id_set),
         },
     )
+    if subgoal_id_set:
+        fallback_status = {sid: "inconclusive" for sid in sorted(subgoal_id_set)}
+        emit(
+            job,
+            "INFO",
+            "synth",
+            "synth_status_defaulted",
+            _status_event_payload(fallback_status),
+        )
+        return stripped_md, fallback_status
     return stripped_md, None
 
 

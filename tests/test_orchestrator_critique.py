@@ -400,6 +400,38 @@ def test_critique_budget_exceeded_returns_stub_no_db_row(
     assert any(p.get("budget_capped") is True for p in payloads)
 
 
+def test_critique_model_failure_writes_fallback_artifact(
+    job: Job, db_path: Path, plan: Plan
+) -> None:
+    _seed_findings(job, [0.6])
+    router = _StubRouter(
+        side_effect={
+            "frontier_alt": [RuntimeError("invalid structured output")],
+        },
+    )
+
+    out = asyncio.run(critique(job, plan, "# Synth\n", router=router))
+
+    assert out.version == 1
+    assert out.should_replan is False
+    assert out.confidence_concerns
+    assert "invalid structured output" in out.confidence_concerns[0]
+
+    rows = _read_critique_rows(db_path, job.id)
+    assert len(rows) == 1
+    assert rows[0]["model"] == "moonshotai/kimi-k2 (fallback)"
+    payload = json.loads(rows[0]["payload_json"])
+    assert payload["confidence_concerns"]
+
+    assert (job.root / "critique/0001.md").exists()
+    events = _read_event_rows(db_path, job.id)
+    written = [e for e in events if e["kind"] == "critique_written"]
+    assert len(written) == 1
+    written_payload = json.loads(written[0]["payload_json"])
+    assert written_payload["fallback"] is True
+    assert written_payload["error_type"] == "RuntimeError"
+
+
 def test_critique_top_n_findings_passed_to_model(job: Job, db_path: Path, plan: Plan) -> None:
     _seed_findings(job, [0.1, 0.9, 0.5])
     router = _StubRouter()

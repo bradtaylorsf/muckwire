@@ -219,7 +219,10 @@ async def _not_implemented_handler(job: Job, task: dict[str, Any]) -> dict[str, 
 _CONNECTOR_SEARCH_PASSTHROUGH: frozenset[str] = frozenset(
     {
         "kind",
+        "kinds",
         "max_results",
+        "provider",
+        "timeout",
         "cycle",
         "office",
         "state",
@@ -3493,6 +3496,20 @@ async def run_loop(
         {"plan_version": plan.version, "objective": plan.objective},
     )
 
+    async def _after_task_progress() -> None:
+        nonlocal plan
+        if tasks_done % HEURISTIC_CHECK_EVERY_N != 0:
+            return
+        await _maybe_run_heuristic(job, plan, handlers, tasks_done)
+        # The synth/critique heuristics may have closed (or reopened)
+        # subgoals on the persisted plan. Reload so plan.is_complete()
+        # in the next loop guard sees the latest state and we exit
+        # cleanly with completion_reason='goal_complete' instead of
+        # running until task_cap or queue drain.
+        refreshed = _load_latest_plan(job)
+        if refreshed is not None:
+            plan = refreshed
+
     while (
         not _should_stop(job)
         and not _is_goal_complete(job, plan)
@@ -3594,6 +3611,7 @@ async def run_loop(
                 {"task_id": task["id"], "kind": task["kind"], "error": err},
             )
             tasks_done += 1
+            await _after_task_progress()
             continue
 
         try:
@@ -3620,6 +3638,7 @@ async def run_loop(
                 },
             )
             tasks_done += 1
+            await _after_task_progress()
             continue
         except RetriableError as exc:
             mark_failed(task["id"], str(exc), db_path=job.db_path)
@@ -3637,6 +3656,7 @@ async def run_loop(
                 },
             )
             tasks_done += 1
+            await _after_task_progress()
             continue
         except Exception as exc:  # noqa: BLE001 — catch-all guard
             # Defensive: a handler raising an unexpected exception type (e.g.
@@ -3658,6 +3678,7 @@ async def run_loop(
                 },
             )
             tasks_done += 1
+            await _after_task_progress()
             continue
 
         follow_ups = (result or {}).get("follow_up_tasks") if isinstance(result, dict) else None
@@ -3705,16 +3726,7 @@ async def run_loop(
 
         tasks_done += 1
 
-        if tasks_done % HEURISTIC_CHECK_EVERY_N == 0:
-            await _maybe_run_heuristic(job, plan, handlers, tasks_done)
-            # The synth/critique heuristics may have closed (or reopened)
-            # subgoals on the persisted plan. Reload so plan.is_complete()
-            # in the next loop guard sees the latest state and we exit
-            # cleanly with completion_reason='goal_complete' instead of
-            # running until task_cap or queue drain.
-            refreshed = _load_latest_plan(job)
-            if refreshed is not None:
-                plan = refreshed
+        await _after_task_progress()
 
     if (
         deadline_ts is not None
