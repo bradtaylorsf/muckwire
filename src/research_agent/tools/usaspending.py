@@ -759,7 +759,7 @@ _register_kind(
     search_fn=search,
     fetch_fn=fetch,
     host_patterns=("usaspending.gov", "www.usaspending.gov", "api.usaspending.gov"),
-    skill_name=None,
+    skill_name="usaspending",
     description=(
         "Federal contracts, grants, loans (award-level detail, no auth)"
     ),

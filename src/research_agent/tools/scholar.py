@@ -445,6 +445,7 @@ _register_kind(
     fetch_fn=fetch,
     host_patterns=("scholar.google.com",),
     skill_name=None,
+    skill_exemption="#320 paid/gated connector skill backfill",
     description="Google Scholar via SerpAPI — requires `SERPAPI_KEY`",
     optional_payload_knobs="`kind: case_law\\|articles`",
     example_query="Section 230 appellate",

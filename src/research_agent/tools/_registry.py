@@ -26,8 +26,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict
-
+from pydantic import BaseModel, ConfigDict, ValidationError
 
 SearchFn = Callable[..., Awaitable[Any]]
 FetchFn = Callable[..., Awaitable[Any]]
@@ -68,11 +67,36 @@ class KindEntry:
     optional_payload_knobs: str
     example_query: str
     module_name: str = field(default="")
+    skill_exemption: str | None = None
 
     @property
     def short_name(self) -> str:
         """``congress`` for ``congress_search``."""
         return self.name.removesuffix("_search")
+
+    @property
+    def required_payload_fields(self) -> tuple[str, ...]:
+        """Required payload fields beyond common ``query``/``sub_question``."""
+        return required_payload_fields(self.payload_schema, include_common=False)
+
+    @property
+    def optional_payload_fields(self) -> tuple[str, ...]:
+        """Optional schema fields beyond common ``query``/``sub_question``."""
+        return optional_payload_fields(self.payload_schema, include_common=False)
+
+    @property
+    def expected_skill_name(self) -> str:
+        """Skill filename expected for this kind, even when not wired yet."""
+        return self.skill_name or self.short_name
+
+    @property
+    def skill_status_label(self) -> str:
+        """Compact skill coverage label for planner/README tables."""
+        if self.skill_name:
+            return f"`{self.skill_name}`"
+        if self.skill_exemption:
+            return f"exempt: {self.skill_exemption}"
+        return "missing"
 
 
 _REGISTRY: dict[str, KindEntry] = {}
@@ -80,6 +104,24 @@ _REGISTRY: dict[str, KindEntry] = {}
 
 class RegistryError(ValueError):
     """Raised when registry operations violate invariants."""
+
+
+@dataclass(frozen=True)
+class PayloadContractResult:
+    """Outcome of validating and normalizing a connector task payload."""
+
+    kind: str
+    valid: bool
+    payload: dict[str, Any]
+    repaired: bool = False
+    error: str | None = None
+    errors: tuple[dict[str, str], ...] = ()
+
+    @property
+    def repair_message(self) -> str:
+        if self.valid:
+            return ""
+        return self.error or f"{self.kind} payload failed connector contract validation"
 
 
 def register_kind(
@@ -90,6 +132,7 @@ def register_kind(
     fetch_fn: FetchFn | None = None,
     host_patterns: tuple[str, ...] = (),
     skill_name: str | None = _SKILL_NAME_UNSET,
+    skill_exemption: str | None = None,
     description: str = "",
     optional_payload_knobs: str = "",
     example_query: str = "",
@@ -123,6 +166,7 @@ def register_kind(
         fetch_fn=fetch_fn,
         host_patterns=tuple(host_patterns),
         skill_name=resolved_skill,
+        skill_exemption=skill_exemption,
         description=description,
         optional_payload_knobs=optional_payload_knobs,
         example_query=example_query,
@@ -165,30 +209,134 @@ def validate_payload(name: str, payload: dict[str, Any]) -> BaseModel:
     return entry.payload_schema.model_validate(payload)
 
 
+def required_payload_fields(
+    schema: type[BaseModel],
+    *,
+    include_common: bool = True,
+) -> tuple[str, ...]:
+    """Return statically-required fields from a connector payload schema."""
+    common = set() if include_common else set(BaseSearchPayload.model_fields)
+    return tuple(
+        name
+        for name, field_info in schema.model_fields.items()
+        if name not in common and field_info.is_required()
+    )
+
+
+def optional_payload_fields(
+    schema: type[BaseModel],
+    *,
+    include_common: bool = True,
+) -> tuple[str, ...]:
+    """Return optional fields from a connector payload schema."""
+    common = set() if include_common else set(BaseSearchPayload.model_fields)
+    return tuple(
+        name
+        for name, field_info in schema.model_fields.items()
+        if name not in common and not field_info.is_required()
+    )
+
+
+def _validation_errors(exc: ValidationError) -> tuple[dict[str, str], ...]:
+    out: list[dict[str, str]] = []
+    for err in exc.errors(include_url=False):
+        loc = ".".join(str(part) for part in err.get("loc", ())) or "<root>"
+        out.append(
+            {
+                "loc": loc,
+                "msg": str(err.get("msg", "")),
+                "type": str(err.get("type", "")),
+            }
+        )
+    return tuple(out)
+
+
+def _format_payload_error(
+    kind: str,
+    entry: KindEntry,
+    errors: tuple[dict[str, str], ...],
+) -> str:
+    rendered = "; ".join(
+        f"{err['loc']}: {err['msg']}" for err in errors
+    ) or "unknown validation error"
+    required = ", ".join(required_payload_fields(entry.payload_schema)) or "none"
+    optional = ", ".join(optional_payload_fields(entry.payload_schema)) or "none"
+    return (
+        f"{kind} payload rejected by connector contract: {rendered}. "
+        f"Required fields: {required}. Optional fields: {optional}."
+    )
+
+
+def validate_payload_contract(name: str, payload: dict[str, Any]) -> PayloadContractResult:
+    """Validate a connector payload and return a normalized, merged payload.
+
+    The normalized payload keeps orchestrator/private extras from ``payload``
+    but overwrites schema-known fields with Pydantic-normalized values. That
+    lets connector schemas repair values such as ``state='California'`` →
+    ``state='CA'`` without dropping internal fields like ``_active_strategies``.
+    """
+    entry = _REGISTRY.get(name)
+    if entry is None:
+        raise RegistryError(f"validate_payload_contract: unknown kind {name!r}")
+
+    try:
+        parsed = entry.payload_schema.model_validate(payload)
+    except ValidationError as exc:
+        errors = _validation_errors(exc)
+        return PayloadContractResult(
+            kind=name,
+            valid=False,
+            payload=dict(payload),
+            error=_format_payload_error(name, entry, errors),
+            errors=errors,
+        )
+
+    normalized = dict(payload)
+    parsed_payload = parsed.model_dump(mode="json", exclude_none=True)
+    normalized.update(parsed_payload)
+
+    comparable_original = dict(payload)
+    for key in entry.payload_schema.model_fields:
+        if key in comparable_original and comparable_original.get(key) is None:
+            comparable_original.pop(key, None)
+            normalized.pop(key, None)
+
+    return PayloadContractResult(
+        kind=name,
+        valid=True,
+        payload=normalized,
+        repaired=normalized != comparable_original,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Planner-prompt rendering helpers.
 # ---------------------------------------------------------------------------
 
 _TABLE_HEADER = (
-    "| Kind | What it covers | Optional payload knobs | Example query |\n"
-    "|---|---|---|---|"
+    "| Kind | What it covers | Required payload fields | Optional payload knobs |"
+    " Skill | Example query |\n"
+    "|---|---|---|---|---|---|"
 )
 
 
 def render_direct_kinds_table() -> str:
     """Render the **Direct connector kinds** markdown table.
 
-    Each row is ``| `<kind>` | <description> | <optional knobs> | `<example>` |``.
-    Missing knobs render as ``—`` so the column stays visually balanced
-    without leaving an empty cell that confuses model parsers.
+    Each row separates connector-specific required fields from optional knobs.
+    Common ``query``/``sub_question`` fields are documented once in the
+    planner prose and omitted from the table to keep it scannable.
     """
     rows: list[str] = [_TABLE_HEADER]
     for entry in iter_kinds():
+        required = ", ".join(f"`{field}`" for field in entry.required_payload_fields) or "—"
         knobs = entry.optional_payload_knobs.strip() or "—"
+        skill = entry.skill_status_label
         example = entry.example_query.strip() or ""
         example_cell = f"`{example}`" if example else "—"
         rows.append(
-            f"| `{entry.name}` | {entry.description} | {knobs} | {example_cell} |"
+            f"| `{entry.name}` | {entry.description} | {required} | {knobs} |"
+            f" {skill} | {example_cell} |"
         )
     return "\n".join(rows)
 
@@ -240,14 +388,18 @@ def _reset_for_tests() -> None:
 __all__ = [
     "BaseSearchPayload",
     "KindEntry",
+    "PayloadContractResult",
     "RegistryError",
     "get_kind",
     "is_registered",
     "iter_kinds",
+    "optional_payload_fields",
     "register_kind",
     "registered_skill_pairs",
     "render_direct_kinds_table",
     "render_kinds_allowlist",
     "render_tactical_replan_kinds",
+    "required_payload_fields",
     "validate_payload",
+    "validate_payload_contract",
 ]

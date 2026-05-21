@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-from pydantic import ValidationError
+from pydantic import ValidationError, field_validator
 
 from research_agent.tools import _registry as registry
 from research_agent.tools._registry import (
@@ -16,7 +16,9 @@ from research_agent.tools._registry import (
     register_kind,
     render_direct_kinds_table,
     render_kinds_allowlist,
+    required_payload_fields,
     validate_payload,
+    validate_payload_contract,
 )
 
 
@@ -76,7 +78,7 @@ def test_skill_name_defaults_to_short_name(
     assert entry.skill_name == "loc"
 
 
-def test_skill_name_explicit_none_grandfathers(
+def test_skill_name_explicit_none_can_carry_exemption(
     empty_registry: dict[str, KindEntry],
 ) -> None:
     entry = register_kind(
@@ -84,8 +86,12 @@ def test_skill_name_explicit_none_grandfathers(
         payload_schema=_DummyPayload,
         search_fn=_dummy_search,
         skill_name=None,
+        skill_exemption="#999 tracked elsewhere",
     )
     assert entry.skill_name is None
+    assert entry.skill_exemption == "#999 tracked elsewhere"
+    assert entry.expected_skill_name == "loc"
+    assert entry.skill_status_label == "exempt: #999 tracked elsewhere"
 
 
 def test_skill_name_can_be_overridden(
@@ -181,6 +187,56 @@ def test_validate_payload_ignores_orchestrator_extras(
     assert parsed.query == "abc"
 
 
+def test_validate_payload_contract_returns_normalized_payload(
+    empty_registry: dict[str, KindEntry],
+) -> None:
+    class _PS(BaseSearchPayload):
+        state: str
+
+        @field_validator("state", mode="before")
+        @classmethod
+        def _normalize_state(cls, value: Any) -> str:
+            return "CA" if value == "California" else str(value)
+
+    register_kind("x_search", payload_schema=_PS, search_fn=_dummy_search)
+
+    result = validate_payload_contract(
+        "x_search",
+        {
+            "query": "abc",
+            "sub_question": "what?",
+            "state": "California",
+            "_active_strategies": ["triangulation"],
+        },
+    )
+
+    assert result.valid is True
+    assert result.repaired is True
+    assert result.payload["state"] == "CA"
+    assert result.payload["_active_strategies"] == ["triangulation"]
+
+
+def test_validate_payload_contract_returns_actionable_error(
+    empty_registry: dict[str, KindEntry],
+) -> None:
+    register_kind("x_search", payload_schema=_DummyPayload, search_fn=_dummy_search)
+
+    result = validate_payload_contract("x_search", {"query": "abc"})
+
+    assert result.valid is False
+    assert result.errors[0]["loc"] == "sub_question"
+    assert "Required fields: query, sub_question" in result.repair_message
+
+
+def test_required_payload_fields_can_hide_common_base_fields() -> None:
+    class _PS(BaseSearchPayload):
+        state: str
+        max_results: int | None = None
+
+    assert required_payload_fields(_PS) == ("query", "sub_question", "state")
+    assert required_payload_fields(_PS, include_common=False) == ("state",)
+
+
 def test_render_direct_kinds_table_one_row_per_kind(
     empty_registry: dict[str, KindEntry],
 ) -> None:
@@ -199,11 +255,16 @@ def test_render_direct_kinds_table_one_row_per_kind(
         description="Beta description",
     )
     rendered = render_direct_kinds_table()
-    assert "| `alpha_search` | Alpha description | `kind: a\\|b` | `alpha example` |" in rendered
+    assert (
+        "| `alpha_search` | Alpha description | — | `kind: a\\|b` | `alpha` |"
+        " `alpha example` |"
+    ) in rendered
     # No knobs / example for beta — table renders ``—`` to keep cells aligned.
-    assert "| `beta_search` | Beta description | — | — |" in rendered
+    assert "| `beta_search` | Beta description | — | — | `beta` | — |" in rendered
     # Header is intact.
-    assert rendered.startswith("| Kind | What it covers | Optional payload knobs | Example query |")
+    assert rendered.startswith(
+        "| Kind | What it covers | Required payload fields | Optional payload knobs"
+    )
 
 
 def test_render_kinds_allowlist_alphabetical(
@@ -288,9 +349,11 @@ def test_live_registry_skill_name_assignment() -> None:
         if entry.skill_name is not None
     }
     assert skilled == {
-        "congress_search": "congress",
+        "bbb_search": "bbb",
         "bne_search": "bne",
+        "calaccess_search": "calaccess",
         "commons_search": "commons",
+        "congress_search": "congress",
         "courtlistener_search": "courtlistener",
         "cspan_search": "cspan",
         "dpla_search": "dpla",
@@ -299,17 +362,25 @@ def test_live_registry_skill_name_assignment() -> None:
         "fec_search": "fec",
         "fedregister_search": "fedregister",
         "gallica_search": "gallica",
+        "gdelt_search": "gdelt",
         "iarchive_search": "iarchive",
         "iwm_search": "iwm",
+        "lda_search": "lda",
+        "licensing_search": "licensing",
+        "littlesis_search": "littlesis",
         "loc_search": "loc",
         "nara_search": "nara",
+        "nonprofits_search": "nonprofits",
         "openalex_search": "openalex",
+        "opencorporates_search": "opencorporates",
         "openlibrary_search": "openlibrary",
         "persee_search": "persee",
         "si_search": "smithsonian",
+        "sos_search": "sos",
         "state_election_search": "state_election",
         "trove_search": "trove",
         "ukna_search": "ukna",
+        "usaspending_search": "usaspending",
         "wikidata_search": "wikidata",
         "wikisource_search": "wikisource",
     }

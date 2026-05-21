@@ -623,7 +623,7 @@ _register_kind(
     search_fn=search,
     fetch_fn=fetch,
     host_patterns=("littlesis.org", "www.littlesis.org"),
-    skill_name=None,
+    skill_name="littlesis",
     description=(
         "Power-mapping database — entities, donations, board seats, family"
         " ties (lead, not evidence)"

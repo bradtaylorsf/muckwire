@@ -20,6 +20,7 @@ from research_agent.orchestrator.plan import (
     MAX_PLAN_VERSIONS,
     MAX_RECENT_RESULTS_FOR_REPLAN,
     Plan,
+    PlanParseError,
     PlanVersionCapExceeded,
     ScopeClass,
     Subgoal,
@@ -456,6 +457,116 @@ def _read_event_kinds(db_path: Path, job_id: str) -> list[str]:
     finally:
         conn.close()
     return [r["kind"] for r in rows]
+
+
+def _read_event_payloads(db_path: Path, job_id: str, kind: str) -> list[dict[str, Any]]:
+    conn = db.connect(db_path)
+    try:
+        rows = conn.execute(
+            "SELECT payload_json FROM events"
+            " WHERE job_id = ? AND kind = ? ORDER BY id ASC",
+            (job_id, kind),
+        ).fetchall()
+    finally:
+        conn.close()
+    return [json.loads(r["payload_json"]) for r in rows]
+
+
+def _read_task_payloads(db_path: Path, job_id: str) -> list[dict[str, Any]]:
+    conn = db.connect(db_path)
+    try:
+        rows = conn.execute(
+            "SELECT payload_json FROM tasks WHERE job_id = ? ORDER BY id ASC",
+            (job_id,),
+        ).fetchall()
+    finally:
+        conn.close()
+    return [json.loads(r["payload_json"]) for r in rows]
+
+
+def test_enqueue_rejects_direct_connector_missing_required_payload(
+    job: Job,
+    db_path: Path,
+) -> None:
+    bad_plan = _sample_plan(
+        task_template=[
+            TaskSpec(
+                kind="state_election_search",
+                payload={
+                    "query": "2026 House candidates",
+                    "sub_question": "Find state candidate rows",
+                },
+            )
+        ]
+    )
+
+    with pytest.raises(PlanParseError, match="state"):
+        plan_module._enqueue_plan_tasks(job, bad_plan)  # noqa: SLF001
+
+    assert _read_task_payloads(db_path, job.id) == []
+    [event] = _read_event_payloads(
+        db_path, job.id, "connector_contract_rejected"
+    )
+    assert event["stage"] == "pre_enqueue"
+    assert event["kind"] == "state_election_search"
+    assert event["plan_task_index"] == 0
+    assert "state" in event["message"]
+
+
+def test_enqueue_repairs_state_election_full_state_name(
+    job: Job,
+    db_path: Path,
+) -> None:
+    plan = _sample_plan(
+        task_template=[
+            TaskSpec(
+                kind="state_election_search",
+                payload={
+                    "query": "2026 House candidates",
+                    "sub_question": "Find California state candidate rows",
+                    "state": "California",
+                },
+            )
+        ]
+    )
+
+    plan_module._enqueue_plan_tasks(job, plan)  # noqa: SLF001
+
+    [payload] = _read_task_payloads(db_path, job.id)
+    assert payload["state"] == "CA"
+    [event] = _read_event_payloads(
+        db_path, job.id, "connector_contract_repaired"
+    )
+    assert event["stage"] == "pre_enqueue"
+    assert event["before"]["state"] == "California"
+    assert event["after"]["state"] == "CA"
+
+
+def test_enqueue_repairs_fec_empty_query_candidate_enumeration(
+    job: Job,
+    db_path: Path,
+) -> None:
+    plan = _sample_plan(
+        task_template=[
+            TaskSpec(
+                kind="fec_search",
+                payload={
+                    "query": "",
+                    "sub_question": "Enumerate 2026 California House candidates",
+                    "cycle": 2026,
+                    "office": "House",
+                    "state": "California",
+                },
+            )
+        ]
+    )
+
+    plan_module._enqueue_plan_tasks(job, plan)  # noqa: SLF001
+
+    [payload] = _read_task_payloads(db_path, job.id)
+    assert payload["kind"] == "candidates_enumerate"
+    assert payload["office"] == "H"
+    assert payload["state"] == "CA"
 
 
 def test_initial_plan_writes_v1_row_and_emits_event(
