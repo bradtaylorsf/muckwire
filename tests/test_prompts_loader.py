@@ -420,8 +420,8 @@ def test_load_planner_renders_registry_table(
     assert "`alpha_search`, `beta_search`" in rendered
     # tactical_replan list mirrors the allowlist.
     assert rendered.count("`alpha_search`, `beta_search`") >= 2
-    # Stub knob renders as ``—``.
-    assert "| `beta_search` | Beta desc. | — | `beta example` |" in rendered
+    # Stub required/knob cells render as ``—``.
+    assert "| `beta_search` | Beta desc. | — | — | missing | `beta example` |" in rendered
 
 
 def test_load_planner_caller_can_override_registry_vars(

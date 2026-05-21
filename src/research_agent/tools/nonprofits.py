@@ -556,7 +556,7 @@ _register_kind(
     search_fn=search,
     fetch_fn=fetch,
     host_patterns=("projects.propublica.org",),
-    skill_name=None,
+    skill_name="nonprofits",
     description="ProPublica Nonprofit Explorer (Form 990 filings, no auth)",
     optional_payload_knobs="—",
     example_query="Heritage Foundation",

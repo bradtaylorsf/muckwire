@@ -440,7 +440,7 @@ _register_kind(
     search_fn=search,
     fetch_fn=fetch,
     host_patterns=("powersearch.sos.ca.gov",),
-    skill_name=None,
+    skill_name="calaccess",
     description="California Cal-Access campaign finance (Playwright)",
     optional_payload_knobs="`kind: contributions\\|independent_expenditures`",
     example_query="Newsom",

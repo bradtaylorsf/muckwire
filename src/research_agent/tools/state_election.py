@@ -13,6 +13,7 @@ from urllib.parse import urlparse
 
 import httpx
 import yaml  # type: ignore[import-untyped]
+from pydantic import field_validator
 
 from research_agent.tools import browser
 from research_agent.tools._registry import (
@@ -28,6 +29,59 @@ logger = logging.getLogger(__name__)
 _CONFIG_PATH = Path("config/state_election_recipes.yaml")
 _DIAGNOSTICS_DIR = Path("data/diagnostics/state_election")
 _DEFAULT_TIMEOUT = 20.0
+_US_STATE_NAME_TO_POSTAL = {
+    "alabama": "AL",
+    "alaska": "AK",
+    "arizona": "AZ",
+    "arkansas": "AR",
+    "california": "CA",
+    "colorado": "CO",
+    "connecticut": "CT",
+    "delaware": "DE",
+    "district of columbia": "DC",
+    "florida": "FL",
+    "georgia": "GA",
+    "hawaii": "HI",
+    "idaho": "ID",
+    "illinois": "IL",
+    "indiana": "IN",
+    "iowa": "IA",
+    "kansas": "KS",
+    "kentucky": "KY",
+    "louisiana": "LA",
+    "maine": "ME",
+    "maryland": "MD",
+    "massachusetts": "MA",
+    "michigan": "MI",
+    "minnesota": "MN",
+    "mississippi": "MS",
+    "missouri": "MO",
+    "montana": "MT",
+    "nebraska": "NE",
+    "nevada": "NV",
+    "new hampshire": "NH",
+    "new jersey": "NJ",
+    "new mexico": "NM",
+    "new york": "NY",
+    "north carolina": "NC",
+    "north dakota": "ND",
+    "ohio": "OH",
+    "oklahoma": "OK",
+    "oregon": "OR",
+    "pennsylvania": "PA",
+    "rhode island": "RI",
+    "south carolina": "SC",
+    "south dakota": "SD",
+    "tennessee": "TN",
+    "texas": "TX",
+    "utah": "UT",
+    "vermont": "VT",
+    "virginia": "VA",
+    "washington": "WA",
+    "west virginia": "WV",
+    "wisconsin": "WI",
+    "wyoming": "WY",
+}
 
 _NAME_KEYS = (
     "candidate_name",
@@ -70,6 +124,24 @@ def _now_iso() -> str:
 def _clean(value: Any) -> str:
     text = "" if value is None else str(value)
     return re.sub(r"\s+", " ", text).strip()
+
+
+def _normalize_state(value: Any) -> str:
+    text = _clean(value)
+    if not text:
+        raise ValueError("state is required")
+    normalized_name = re.sub(r"[^a-z]+", " ", text.lower()).strip()
+    code = _US_STATE_NAME_TO_POSTAL.get(normalized_name, text.upper())
+    if not re.fullmatch(r"[A-Z]{2}", code):
+        raise ValueError(
+            "state must be a two-letter postal abbreviation or full US state name"
+        )
+    if code not in _RECIPES:
+        supported = ", ".join(sorted(_RECIPES)) or "none"
+        raise ValueError(
+            f"state {code} is not supported by state_election recipes; supported: {supported}"
+        )
+    return code
 
 
 def _lookup(row: dict[str, Any], keys: tuple[str, ...]) -> str:
@@ -354,14 +426,18 @@ async def _portal_search(
 async def search(
     query: str,
     *,
-    state: str,
+    state: str | None = None,
     office: str | None = None,
     cycle: int | None = None,
     max_results: int = 50,
     timeout: float = _DEFAULT_TIMEOUT,
 ) -> list[SearchResult]:
     """Search official state-election candidate roster sources."""
-    state_norm = state.strip().upper()
+    try:
+        state_norm = _normalize_state(state)
+    except ValueError as exc:
+        logger.warning("state_election: invalid state %r: %s", state, exc)
+        return []
     recipe = _RECIPES.get(state_norm)
     if recipe is None:
         logger.warning("state_election: no recipe for state=%s", state_norm)
@@ -438,6 +514,11 @@ class _PayloadSchema(_BaseSearchPayload):
     cycle: int | None = None
     max_results: int | None = None
 
+    @field_validator("state", mode="before")
+    @classmethod
+    def _normalize_state_field(cls, value: Any) -> str:
+        return _normalize_state(value)
+
 
 _register_kind(
     KIND,
@@ -458,7 +539,7 @@ _register_kind(
     ),
     skill_name="state_election",
     description="Official state election candidate roster sources and portals",
-    optional_payload_knobs="`state`, `office`, `cycle`, `max_results`",
+    optional_payload_knobs="`office`, `cycle`, `max_results`",
     example_query="2026 House candidates",
     module_name="state_election",
 )

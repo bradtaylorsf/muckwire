@@ -107,51 +107,52 @@ cloud tiers (priced — see [Costs](#costs)). The full tier roster lives in
 The planner can dispatch directly to any of the connectors below instead
 of falling back to `web_search` with a `site:` operator. Each row here
 mirrors what the planner sees in its system prompt — same description,
-same optional payload knobs, same example query. The table is generated
-from `src/research_agent/tools/_registry.py` via
+same required payload fields, same optional payload knobs, same skill
+linkage, same example query. The table is generated from
+`src/research_agent/tools/_registry.py` via
 `scripts/regen_readme_kinds.py`; do not hand-edit between the sentinels.
 
 <!-- BEGIN: direct-connector-kinds (auto-generated) -->
 
-| Kind | What it covers | Optional payload knobs | Example query |
-|---|---|---|---|
-| `bbb_search` | Better Business Bureau profiles + ratings (Playwright, no auth) | — | `SBI Builders` |
-| `bne_search` | BNE Hemeroteca Digital Spanish historical press (Playwright scrape, no auth) | `max_results`, `fechaDesde`, `fechaHasta`, `localizacion` | `guerra civil 1936` |
-| `calaccess_search` | California Cal-Access campaign finance (Playwright) | `kind: contributions\|independent_expenditures` | `Newsom` |
-| `commons_search` | Wikimedia Commons free media files with imageinfo license, author, MIME type, original URL, and thumbnail metadata | `max_results` | `Algerian war photographs` |
-| `congress_search` | Bills, members, committees, hearings, congressional record (Congress.gov v3 API) | `kind: bill\|member\|committee\|hearing\|congressional-record` | `Inflation Reduction Act` |
-| `courtlistener_search` | Federal & state court opinions, dockets (RECAP), oral arguments — requires `COURTLISTENER_API_TOKEN` | `kind: opinions\|dockets\|oral_arguments` | `Schedule F appellate` |
-| `cspan_search` | C-SPAN Video Library US political broadcast video with transcripts (Playwright scrape, no auth) | `max_results`, `type=House\|Senate` | `Project 2025` |
-| `dpla_search` | Digital Public Library of America item metadata across US cultural institutions; requires DPLA_API_KEY | `max_results`, `provider` | `Maya land claims` |
-| `edgar_search` | SEC filings (10-K, 10-Q, 8-K, Form 4) — requires `RESEARCH_USER_AGENT` w/ contact email | `form_type: 10-K\|8-K\|...` | `Cisco cybersecurity` |
-| `europeana_search` | Europeana multilingual European cultural-heritage item metadata across museums, libraries, and archives; requires EUROPEANA_API_KEY | `max_results`, `lang` | `Algerian war 1954` |
-| `fec_search` | Candidates, committees, schedule A/E filings (OpenFEC) | `kind: candidates\|candidates_enumerate\|committees\|schedules/schedule_a\|schedules/schedule_e`, `cycle`, `office`, `state`, `district`, `party`, `candidate_status`, `max_rows` | `Trump 2024 committee` |
-| `fedregister_search` | Federal Register rules, proposed rules, agency notices since 1994 (no auth) | `since: YYYY-MM-DD`, `agencies: [...]` | `Schedule F` |
-| `gallica_search` | Gallica/BnF SRU XML search for French national-library newspapers, books, manuscripts, maps, and other digitized primary sources | `max_results` (SRU maximumRecords capped at 50) | `guerre d'Algerie` |
-| `gdelt_search` | GDELT — Global news event aggregator, no `site:` operator (no auth) | `since: YYYY-MM-DD`, `language: english` | `Project 2025 mainstream coverage` |
-| `iarchive_search` | Internet Archive texts, audio, movies, and web-archive collection metadata through advancedsearch.php | `mediatype: texts\|audio\|movies\|web`, `page: <int>` | `Pullman Strike` |
-| `iwm_search` | Imperial War Museums public collections: photographs, sound/oral histories, documents, film, objects (Playwright scrape, no auth) | `max_results`, `object_category`, `related_period`, `records_with_media`, `style`, `page_size` | `Battle of Britain` |
-| `lda_search` | Senate Lobbying Disclosure Act filings (registrants, contributions) | `kind: filings\|registrants\|contributions` | `Heritage Foundation` |
-| `licensing_search` | State contractor / licensing-board lookups (Playwright; CA wired, others stubs) | `state: CA\|TX\|FL\|NY` | `SBI Builders` |
-| `linkedin_search` | LinkedIn person/company lookup via Proxycurl or Lix — requires broker key | `kind: person\|company` | `Sundar Pichai` |
-| `littlesis_search` | Power-mapping database — entities, donations, board seats, family ties (lead, not evidence) | `kind: entities\|relationships` | `Peter Thiel` |
-| `loc_search` | Library of Congress digital collections, including Chronicling America through the unified loc.gov API | `collection: chronicling-america\|prints\|manuscripts\|recordings\|maps`, `page: <int>` | `battle of algiers` |
-| `nara_search` | US National Archives Catalog OPA v2 records, declassified federal records, military records, photos; requires NARA_API_KEY | `available_online`, `type_of_materials`, `result_types`, `record_group`, `page` | `Vietnam War declassified` |
-| `nonprofits_search` | ProPublica Nonprofit Explorer (Form 990 filings, no auth) | — | `Heritage Foundation` |
-| `openalex_search` | OpenAlex Works scholarly articles, abstracts, DOIs, citations, authors, venues, and open-access URLs | `max_results`, `filter`, `sort` | `Project 2025 unitary executive theory` |
-| `opencorporates_search` | Global company registry — requires `OPENCORPORATES_API_KEY` | `jurisdiction: us_ca\|gb\|...` | `Acme Holdings` |
-| `openlibrary_search` | Open Library book metadata, ISBN/OCLC/LCCN identifiers, and Internet Archive scan IDs through search.json | `max_results` | `Pullman Strike 1894` |
-| `persee_search` | Persee French academic journals in humanities and social sciences (Playwright scrape, no auth) | `max_results` | `guerre d'Algerie` |
-| `sanctions_search` | OFAC SDN + UK sanctions lists (local index, no auth) | — | `Wagner Group` |
-| `scholar_search` | Google Scholar via SerpAPI — requires `SERPAPI_KEY` | `kind: case_law\|articles` | `Section 230 appellate` |
-| `si_search` | Smithsonian Open Access digitized collection objects, museum artifacts, images, 3D assets, and object metadata via api.data.gov | `max_results` | `Apollo 11` |
-| `sos_search` | State Secretary-of-State business entity filings (Playwright; CA wired, others stubs) | `state: CA\|DE\|NV\|...` | `Acme Corp` |
-| `state_election_search` | Official state election candidate roster sources and portals | `state`, `office`, `cycle`, `max_results` | `2026 House candidates` |
-| `trove_search` | Trove / National Library of Australia metadata for newspapers, books, photos, magazines, oral histories; metadata-only default | `category`, `zone`, `sortby` | `White Australia Policy 1901` |
-| `ukna_search` | UK National Archives Discovery catalogue metadata for Foreign Office, War Office, Colonial Office, and other UK archival records (no auth) | `max_results`, `page` | `Mau Mau Kenya` |
-| `usaspending_search` | Federal contracts, grants, loans (award-level detail, no auth) | `award_type: contracts\|grants\|loans` | `Heritage Foundation contract` |
-| `wikidata_search` | Wikidata Query Service raw SPARQL for biographical, relational, occupational, place, and entity-ID data | `max_results` (client-side truncation; SPARQL should include `LIMIT`) | `SELECT ?item ?itemLabel WHERE { ?item wdt:P31 wd:Q5; wdt:P19 wd:Q90 . SERVICE wikibase:label { bd:serviceParam wikibase:language "en". } } LIMIT 3` |
-| `wikisource_search` | Wikisource transcribed primary documents across per-language hosts; fetch returns the full source text in cleaned_text | `lang: en|fr|es|de|it|pt|nl|ru|zh|ja|ar`, `max_results` | `Treaty of Versailles` |
+| Kind | What it covers | Required payload fields | Optional payload knobs | Skill | Example query |
+|---|---|---|---|---|---|
+| `bbb_search` | Better Business Bureau profiles + ratings (Playwright, no auth) | — | — | `bbb` | `SBI Builders` |
+| `bne_search` | BNE Hemeroteca Digital Spanish historical press (Playwright scrape, no auth) | — | `max_results`, `fechaDesde`, `fechaHasta`, `localizacion` | `bne` | `guerra civil 1936` |
+| `calaccess_search` | California Cal-Access campaign finance (Playwright) | — | `kind: contributions\|independent_expenditures` | `calaccess` | `Newsom` |
+| `commons_search` | Wikimedia Commons free media files with imageinfo license, author, MIME type, original URL, and thumbnail metadata | — | `max_results` | `commons` | `Algerian war photographs` |
+| `congress_search` | Bills, members, committees, hearings, congressional record (Congress.gov v3 API) | — | `kind: bill\|member\|committee\|hearing\|congressional-record` | `congress` | `Inflation Reduction Act` |
+| `courtlistener_search` | Federal & state court opinions, dockets (RECAP), oral arguments — requires `COURTLISTENER_API_TOKEN` | — | `kind: opinions\|dockets\|oral_arguments` | `courtlistener` | `Schedule F appellate` |
+| `cspan_search` | C-SPAN Video Library US political broadcast video with transcripts (Playwright scrape, no auth) | — | `max_results`, `type=House\|Senate` | `cspan` | `Project 2025` |
+| `dpla_search` | Digital Public Library of America item metadata across US cultural institutions; requires DPLA_API_KEY | — | `max_results`, `provider` | `dpla` | `Maya land claims` |
+| `edgar_search` | SEC filings (10-K, 10-Q, 8-K, Form 4) — requires `RESEARCH_USER_AGENT` w/ contact email | — | `form_type: 10-K\|8-K\|...` | `edgar` | `Cisco cybersecurity` |
+| `europeana_search` | Europeana multilingual European cultural-heritage item metadata across museums, libraries, and archives; requires EUROPEANA_API_KEY | — | `max_results`, `lang` | `europeana` | `Algerian war 1954` |
+| `fec_search` | Candidates, committees, schedule A/E filings (OpenFEC) | — | `kind: candidates\|candidates_enumerate\|committees\|schedules/schedule_a\|schedules/schedule_e`, `cycle`, `office`, `state`, `district`, `party`, `candidate_status`, `max_rows` | `fec` | `Trump 2024 committee` |
+| `fedregister_search` | Federal Register rules, proposed rules, agency notices since 1994 (no auth) | — | `since: YYYY-MM-DD`, `agencies: [...]` | `fedregister` | `Schedule F` |
+| `gallica_search` | Gallica/BnF SRU XML search for French national-library newspapers, books, manuscripts, maps, and other digitized primary sources | — | `max_results` (SRU maximumRecords capped at 50) | `gallica` | `guerre d'Algerie` |
+| `gdelt_search` | GDELT — Global news event aggregator, no `site:` operator (no auth) | — | `since: YYYY-MM-DD`, `language: english` | `gdelt` | `Project 2025 mainstream coverage` |
+| `iarchive_search` | Internet Archive texts, audio, movies, and web-archive collection metadata through advancedsearch.php | — | `mediatype: texts\|audio\|movies\|web`, `page: <int>` | `iarchive` | `Pullman Strike` |
+| `iwm_search` | Imperial War Museums public collections: photographs, sound/oral histories, documents, film, objects (Playwright scrape, no auth) | — | `max_results`, `object_category`, `related_period`, `records_with_media`, `style`, `page_size` | `iwm` | `Battle of Britain` |
+| `lda_search` | Senate Lobbying Disclosure Act filings (registrants, contributions) | — | `kind: filings\|registrants\|contributions` | `lda` | `Heritage Foundation` |
+| `licensing_search` | State contractor / licensing-board lookups (Playwright; CA wired, others stubs) | — | `state: CA\|TX\|FL\|NY` | `licensing` | `SBI Builders` |
+| `linkedin_search` | LinkedIn person/company lookup via Proxycurl or Lix — requires broker key | — | `kind: person\|company` | exempt: #320 paid/gated connector skill backfill | `Sundar Pichai` |
+| `littlesis_search` | Power-mapping database — entities, donations, board seats, family ties (lead, not evidence) | — | `kind: entities\|relationships` | `littlesis` | `Peter Thiel` |
+| `loc_search` | Library of Congress digital collections, including Chronicling America through the unified loc.gov API | — | `collection: chronicling-america\|prints\|manuscripts\|recordings\|maps`, `page: <int>` | `loc` | `battle of algiers` |
+| `nara_search` | US National Archives Catalog OPA v2 records, declassified federal records, military records, photos; requires NARA_API_KEY | — | `available_online`, `type_of_materials`, `result_types`, `record_group`, `page` | `nara` | `Vietnam War declassified` |
+| `nonprofits_search` | ProPublica Nonprofit Explorer (Form 990 filings, no auth) | — | — | `nonprofits` | `Heritage Foundation` |
+| `openalex_search` | OpenAlex Works scholarly articles, abstracts, DOIs, citations, authors, venues, and open-access URLs | — | `max_results`, `filter`, `sort` | `openalex` | `Project 2025 unitary executive theory` |
+| `opencorporates_search` | Global company registry — requires `OPENCORPORATES_API_KEY` | — | `jurisdiction: us_ca\|gb\|...` | `opencorporates` | `Acme Holdings` |
+| `openlibrary_search` | Open Library book metadata, ISBN/OCLC/LCCN identifiers, and Internet Archive scan IDs through search.json | — | `max_results` | `openlibrary` | `Pullman Strike 1894` |
+| `persee_search` | Persee French academic journals in humanities and social sciences (Playwright scrape, no auth) | — | `max_results` | `persee` | `guerre d'Algerie` |
+| `sanctions_search` | OFAC SDN + UK sanctions lists (local index, no auth) | — | — | exempt: #320 paid/gated and sanctions connector skill backfill | `Wagner Group` |
+| `scholar_search` | Google Scholar via SerpAPI — requires `SERPAPI_KEY` | — | `kind: case_law\|articles` | exempt: #320 paid/gated connector skill backfill | `Section 230 appellate` |
+| `si_search` | Smithsonian Open Access digitized collection objects, museum artifacts, images, 3D assets, and object metadata via api.data.gov | — | `max_results` | `smithsonian` | `Apollo 11` |
+| `sos_search` | State Secretary-of-State business entity filings (Playwright; CA wired, others stubs) | — | `state: CA\|DE\|NV\|...` | `sos` | `Acme Corp` |
+| `state_election_search` | Official state election candidate roster sources and portals | `state` | `office`, `cycle`, `max_results` | `state_election` | `2026 House candidates` |
+| `trove_search` | Trove / National Library of Australia metadata for newspapers, books, photos, magazines, oral histories; metadata-only default | — | `category`, `zone`, `sortby` | `trove` | `White Australia Policy 1901` |
+| `ukna_search` | UK National Archives Discovery catalogue metadata for Foreign Office, War Office, Colonial Office, and other UK archival records (no auth) | — | `max_results`, `page` | `ukna` | `Mau Mau Kenya` |
+| `usaspending_search` | Federal contracts, grants, loans (award-level detail, no auth) | — | `award_type: contracts\|grants\|loans` | `usaspending` | `Heritage Foundation contract` |
+| `wikidata_search` | Wikidata Query Service raw SPARQL for biographical, relational, occupational, place, and entity-ID data | — | `max_results` (client-side truncation; SPARQL should include `LIMIT`) | `wikidata` | `SELECT ?item ?itemLabel WHERE { ?item wdt:P31 wd:Q5; wdt:P19 wd:Q90 . SERVICE wikibase:label { bd:serviceParam wikibase:language "en". } } LIMIT 3` |
+| `wikisource_search` | Wikisource transcribed primary documents across per-language hosts; fetch returns the full source text in cleaned_text | — | `lang: en|fr|es|de|it|pt|nl|ru|zh|ja|ar`, `max_results` | `wikisource` | `Treaty of Versailles` |
 
 <!-- END: direct-connector-kinds -->
 

@@ -571,7 +571,7 @@ _register_kind(
     search_fn=search,
     fetch_fn=fetch,
     host_patterns=("opencorporates.com", "www.opencorporates.com"),
-    skill_name=None,
+    skill_name="opencorporates",
     description="Global company registry — requires `OPENCORPORATES_API_KEY`",
     optional_payload_knobs="`jurisdiction: us_ca\\|gb\\|...`",
     example_query="Acme Holdings",

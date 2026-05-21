@@ -132,7 +132,13 @@ def _patch_state_election(monkeypatch: pytest.MonkeyPatch) -> None:
                 "source_type": "csv",
                 "retrieval_method": "static_fetch",
                 "cycle_coverage": [2026],
-            }
+            },
+            "MD": {
+                "source_url": "https://fixtures.example.test/md_2026.csv",
+                "source_type": "csv",
+                "retrieval_method": "static_fetch",
+                "cycle_coverage": [2026],
+            },
         },
     )
 
@@ -195,6 +201,7 @@ def _make_job(tmp_path: Path) -> tuple[Job, Plan]:
                 kind="fec_search",
                 payload={
                     "query": "",
+                    "sub_question": "Enumerate 2026 California House candidates from FEC",
                     "kind": "candidates_enumerate",
                     "cycle": 2026,
                     "office": "H",
@@ -208,6 +215,7 @@ def _make_job(tmp_path: Path) -> tuple[Job, Plan]:
                 kind="fec_search",
                 payload={
                     "query": "",
+                    "sub_question": "Enumerate 2026 Florida Senate candidates from FEC",
                     "kind": "candidates_enumerate",
                     "cycle": 2026,
                     "office": "S",
@@ -220,6 +228,7 @@ def _make_job(tmp_path: Path) -> tuple[Job, Plan]:
                 kind="state_election_search",
                 payload={
                     "query": "House",
+                    "sub_question": "Find Colorado state-election House candidate rows",
                     "cycle": 2026,
                     "state": "CO",
                     "office": "House",
@@ -230,6 +239,7 @@ def _make_job(tmp_path: Path) -> tuple[Job, Plan]:
                 kind="state_election_search",
                 payload={
                     "query": "2026 U.S. House candidates",
+                    "sub_question": "Find Maryland state-election House candidate rows",
                     "cycle": 2026,
                     "state": "MD",
                     "office": "House",

@@ -625,7 +625,7 @@ _register_kind(
     search_fn=search,
     fetch_fn=fetch,
     host_patterns=("lda.senate.gov", "lda.gov", "www.lda.gov"),
-    skill_name=None,
+    skill_name="lda",
     description=(
         "Senate Lobbying Disclosure Act filings (registrants, contributions)"
     ),
