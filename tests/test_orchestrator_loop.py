@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import json
 from pathlib import Path
 from typing import Any
@@ -11,6 +12,7 @@ import pytest
 from research_agent.orchestrator import plan as plan_module
 from research_agent.orchestrator.errors import FatalError, RetriableError
 from research_agent.orchestrator.loop import (
+    _CONNECTOR_SEARCH_PASSTHROUGH,
     HEURISTIC_CHECK_EVERY_N,
     MAX_DRAIN_REPLANS,
     MAX_TASKS_PER_JOB,
@@ -695,6 +697,36 @@ def test_module_constants_match_spec() -> None:
     assert MAX_TASKS_PER_JOB == 10000
     assert HEURISTIC_CHECK_EVERY_N == 25
     assert RETRY_MAX_ATTEMPTS == 5
+
+
+def test_connector_search_passthrough_covers_registered_payload_contracts() -> None:
+    """Every connector-accepted schema knob must survive dispatch filtering."""
+    import research_agent.tools  # noqa: F401 - populate registry
+    from research_agent.tools._registry import iter_kinds
+
+    base_fields = {"query", "sub_question"}
+    missing: list[tuple[str, str]] = []
+    for entry in iter_kinds():
+        schema_fields = set(entry.payload_schema.model_fields) - base_fields
+        sig = inspect.signature(entry.search_fn)
+        accepts_var_kw = any(
+            p.kind is inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()
+        )
+        accepted = {
+            name
+            for name, param in sig.parameters.items()
+            if param.kind
+            in (
+                inspect.Parameter.KEYWORD_ONLY,
+                inspect.Parameter.POSITIONAL_OR_KEYWORD,
+            )
+        }
+        for field in sorted(schema_fields):
+            accepted_by_connector = accepts_var_kw or field in accepted
+            if accepted_by_connector and field not in _CONNECTOR_SEARCH_PASSTHROUGH:
+                missing.append((entry.name, field))
+
+    assert missing == []
 
 
 CONNECTOR_KIND_PREFIXES: tuple[str, ...] = (

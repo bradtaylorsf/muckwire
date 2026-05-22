@@ -219,7 +219,10 @@ async def _not_implemented_handler(job: Job, task: dict[str, Any]) -> dict[str, 
 _CONNECTOR_SEARCH_PASSTHROUGH: frozenset[str] = frozenset(
     {
         "kind",
+        "kinds",
         "max_results",
+        "provider",
+        "timeout",
         "cycle",
         "office",
         "state",
