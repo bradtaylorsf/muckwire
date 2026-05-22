@@ -36,6 +36,7 @@ from typing import Any
 from urllib.parse import urljoin, urlparse
 
 import httpx
+from pydantic import field_validator, model_validator
 
 from research_agent import config
 from research_agent.tools._registry import (
@@ -64,6 +65,77 @@ _VALID_KINDS = {
     "committees",
     "schedules/schedule_a",
     "schedules/schedule_e",
+}
+_OFFICE_ALIASES = {
+    "h": "H",
+    "house": "H",
+    "representative": "H",
+    "representatives": "H",
+    "u s house": "H",
+    "us house": "H",
+    "united states house": "H",
+    "s": "S",
+    "senate": "S",
+    "senator": "S",
+    "u s senate": "S",
+    "us senate": "S",
+    "united states senate": "S",
+    "p": "P",
+    "president": "P",
+    "presidential": "P",
+}
+_STATE_NAME_TO_POSTAL = {
+    "alabama": "AL",
+    "alaska": "AK",
+    "arizona": "AZ",
+    "arkansas": "AR",
+    "california": "CA",
+    "colorado": "CO",
+    "connecticut": "CT",
+    "delaware": "DE",
+    "district of columbia": "DC",
+    "florida": "FL",
+    "georgia": "GA",
+    "hawaii": "HI",
+    "idaho": "ID",
+    "illinois": "IL",
+    "indiana": "IN",
+    "iowa": "IA",
+    "kansas": "KS",
+    "kentucky": "KY",
+    "louisiana": "LA",
+    "maine": "ME",
+    "maryland": "MD",
+    "massachusetts": "MA",
+    "michigan": "MI",
+    "minnesota": "MN",
+    "mississippi": "MS",
+    "missouri": "MO",
+    "montana": "MT",
+    "nebraska": "NE",
+    "nevada": "NV",
+    "new hampshire": "NH",
+    "new jersey": "NJ",
+    "new mexico": "NM",
+    "new york": "NY",
+    "north carolina": "NC",
+    "north dakota": "ND",
+    "ohio": "OH",
+    "oklahoma": "OK",
+    "oregon": "OR",
+    "pennsylvania": "PA",
+    "rhode island": "RI",
+    "south carolina": "SC",
+    "south dakota": "SD",
+    "tennessee": "TN",
+    "texas": "TX",
+    "utah": "UT",
+    "vermont": "VT",
+    "virginia": "VA",
+    "washington": "WA",
+    "west virginia": "WV",
+    "wisconsin": "WI",
+    "wyoming": "WY",
 }
 
 # Candidate IDs: letter prefix (H/S/P) + 8 digits typically; allow alphanumeric.
@@ -1149,6 +1221,66 @@ class _PayloadSchema(_BaseSearchPayload):
     max_rows: int | None = None
     per_page: int | None = None
     page: int | None = None
+
+    @field_validator("kind", mode="before")
+    @classmethod
+    def _normalize_kind(cls, value: Any) -> str | None:
+        if value is None:
+            return None
+        text = str(value).strip()
+        if not text:
+            return None
+        return text
+
+    @field_validator("office", mode="before")
+    @classmethod
+    def _normalize_office(cls, value: Any) -> str | None:
+        if value is None:
+            return None
+        text = re.sub(r"[^a-z0-9]+", " ", str(value).strip().lower()).strip()
+        if not text:
+            return None
+        return _OFFICE_ALIASES.get(text, str(value).strip().upper())
+
+    @field_validator("state", mode="before")
+    @classmethod
+    def _normalize_state(cls, value: Any) -> str | None:
+        if value is None:
+            return None
+        text = str(value).strip()
+        if not text:
+            return None
+        normalized_name = re.sub(r"[^a-z]+", " ", text.lower()).strip()
+        return _STATE_NAME_TO_POSTAL.get(normalized_name, text.upper())
+
+    @model_validator(mode="after")
+    def _validate_fec_contract(self) -> _PayloadSchema:
+        kind = self.kind or "candidates"
+        if kind not in _VALID_KINDS:
+            raise ValueError(
+                f"kind must be one of {', '.join(sorted(_VALID_KINDS))}"
+            )
+
+        query = self.query.strip()
+        if kind in {None, "candidates"} and not query and self.cycle and self.office:
+            kind = "candidates_enumerate"
+            self.kind = kind
+
+        if kind == "candidates_enumerate":
+            if self.cycle is None:
+                raise ValueError("kind=candidates_enumerate requires cycle")
+            if self.office is None:
+                raise ValueError("kind=candidates_enumerate requires office")
+            if self.office not in {"H", "S", "P"}:
+                raise ValueError("kind=candidates_enumerate office must be H, S, or P")
+            return self
+
+        if not query:
+            raise ValueError(
+                "query must be non-empty unless kind=candidates_enumerate "
+                "with cycle and office"
+            )
+        return self
 
 
 _register_kind(

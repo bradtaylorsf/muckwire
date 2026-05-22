@@ -163,10 +163,12 @@ configured in this environment).
 #### Direct connector kinds
 
 Each kind dispatches to a dedicated `tools/<name>.py` module. Payload
-shape is `{ query: "…", sub_question: "…" }`; a few connectors take
-optional `kind`, `state`, `since`, or `max_results` knobs (noted
-below). The loop turns top hits into `web_fetch` follow-ups exactly as
-it does for `web_search`.
+shape always starts with `{ query: "…", sub_question: "…" }`. The table
+separates connector-specific required fields from optional knobs. Missing
+required connector fields are rejected before enqueue, so repair the next
+plan with the required payload shape rather than retrying the same task.
+The loop turns top hits into `web_fetch` follow-ups exactly as it does for
+`web_search`.
 
 {{direct_kinds_table}}
 
@@ -207,7 +209,7 @@ connector module on the fetch side.
 - `arxiv_search`: `{ query: "…", sub_question: "…", max_results: 10 }`
 - `local_corpus_query`: `{ query: "…", sub_question: "…", top_k: 10 }`
 - `cornerstone_query`: `{ sub_question: "…", cornerstone_url: "<URL>", top_k: 8 }` (replans only — the index does not exist on the initial plan)
-- direct connector kinds ({{kinds_allowlist}}): `{ query: "…", sub_question: "…" }` plus the optional knobs noted in the **Direct connector kinds** table above (e.g. `kind`, `state`, `since`, `max_results`).
+- direct connector kinds ({{kinds_allowlist}}): `{ query: "…", sub_question: "…" }` plus any required fields and optional knobs noted in the **Direct connector kinds** table above (e.g. `state` for `state_election_search`; `kind`, `since`, `max_results` where listed).
 
 ### When to use each search
 

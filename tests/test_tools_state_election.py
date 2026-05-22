@@ -8,6 +8,7 @@ from typing import Any
 import pytest
 
 from research_agent.tools import state_election
+from research_agent.tools._registry import validate_payload_contract
 
 
 def _patch_httpx(monkeypatch: pytest.MonkeyPatch, text_by_url: dict[str, str]) -> None:
@@ -32,6 +33,48 @@ def _set_recipe(monkeypatch: pytest.MonkeyPatch, state: str, recipe: dict[str, A
     recipes = dict(state_election._RECIPES)
     recipes[state] = recipe
     monkeypatch.setattr(state_election, "_RECIPES", recipes)
+
+
+def test_payload_contract_normalizes_full_state_name() -> None:
+    result = validate_payload_contract(
+        "state_election_search",
+        {
+            "query": "House candidates",
+            "sub_question": "Find California House candidates",
+            "state": "California",
+        },
+    )
+
+    assert result.valid is True
+    assert result.repaired is True
+    assert result.payload["state"] == "CA"
+
+
+def test_payload_contract_rejects_missing_state() -> None:
+    result = validate_payload_contract(
+        "state_election_search",
+        {
+            "query": "House candidates",
+            "sub_question": "Find House candidates",
+        },
+    )
+
+    assert result.valid is False
+    assert "state" in result.repair_message
+
+
+def test_payload_contract_rejects_unsupported_state() -> None:
+    result = validate_payload_contract(
+        "state_election_search",
+        {
+            "query": "House candidates",
+            "sub_question": "Find Alabama House candidates",
+            "state": "Alabama",
+        },
+    )
+
+    assert result.valid is False
+    assert "state AL is not supported" in result.repair_message
 
 
 @pytest.mark.asyncio

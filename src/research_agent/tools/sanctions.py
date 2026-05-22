@@ -53,7 +53,7 @@ import xml.etree.ElementTree as ET
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import parse_qs, urlparse
 
 import httpx
@@ -1095,6 +1095,7 @@ KIND = "sanctions_search"
 
 class _PayloadSchema(_BaseSearchPayload):
     max_results: int | None = None
+    kinds: list[Literal["SDN", "EU", "UK"]] | None = None
 
 
 _register_kind(
@@ -1107,9 +1108,11 @@ _register_kind(
         "home.treasury.gov",
         "webgate.ec.europa.eu",
     ),
-    skill_name=None,
-    description="OFAC SDN + UK sanctions lists (local index, no auth)",
-    optional_payload_knobs="—",
+    description=(
+        "OFAC sanctions screening plus legacy EU/UK local rows; check source"
+        " freshness before compliance use"
+    ),
+    optional_payload_knobs="`max_results`, `kinds: [SDN|EU|UK]`",
     example_query="Wagner Group",
     module_name="sanctions",
 )

@@ -26,7 +26,7 @@ import logging
 import re
 import time
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import urlparse
 
 import httpx
@@ -434,7 +434,7 @@ KIND = "scholar_search"
 
 
 class _PayloadSchema(_BaseSearchPayload):
-    kind: str | None = None
+    kind: Literal["case_law", "articles"] | None = None
     max_results: int | None = None
 
 
@@ -444,9 +444,8 @@ _register_kind(
     search_fn=search,
     fetch_fn=fetch,
     host_patterns=("scholar.google.com",),
-    skill_name=None,
     description="Google Scholar via SerpAPI — requires `SERPAPI_KEY`",
-    optional_payload_knobs="`kind: case_law\\|articles`",
+    optional_payload_knobs="`kind: case_law\\|articles`, `max_results`",
     example_query="Section 230 appellate",
     module_name="scholar",
 )

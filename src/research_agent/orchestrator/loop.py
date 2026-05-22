@@ -219,7 +219,10 @@ async def _not_implemented_handler(job: Job, task: dict[str, Any]) -> dict[str, 
 _CONNECTOR_SEARCH_PASSTHROUGH: frozenset[str] = frozenset(
     {
         "kind",
+        "kinds",
         "max_results",
+        "provider",
+        "timeout",
         "cycle",
         "office",
         "state",
@@ -340,7 +343,7 @@ def _task_passthrough_payload(payload: dict[str, Any]) -> dict[str, Any]:
 
 def _deep_load_skills_for_connector(
     job: Job,
-    module_name: str,
+    skill_name: str | None,
     payload: dict[str, Any],
 ) -> None:
     """Deep-load the connector skill + any active strategy skills.
@@ -359,15 +362,16 @@ def _deep_load_skills_for_connector(
     connector path.
     """
     try:
-        load_skill("connectors", module_name, job=job)
+        if skill_name:
+            load_skill("connectors", skill_name, job=job)
         active = payload.get("_active_strategies")
         if isinstance(active, list) and active:
             load_strategies([s for s in active if isinstance(s, str)], job=job)
     except Exception:  # noqa: BLE001 — skills are auxiliary; never break the connector
-        logger.exception("skills_deep_load_failed module=%s", module_name)
+        logger.exception("skills_deep_load_failed skill=%s", skill_name)
 
 
-def _make_connector_search_handler(module_name: str) -> Handler:
+def _make_connector_search_handler(entry: Any) -> Handler:
     """Build a thin search-handler that dispatches to ``tools.<module_name>.search``.
 
     Converts the connector's :class:`MissingCredentialError` (raised by
@@ -387,12 +391,49 @@ def _make_connector_search_handler(module_name: str) -> Handler:
     planner's system prompt and is materialized exactly at task-emit time.
     """
 
+    kind_name = str(entry.name)
+    module_name = str(entry.module_name)
+    skill_name = entry.skill_name
+
     async def _handler(job: Job, task: dict[str, Any]) -> dict[str, Any]:
         from importlib import import_module
 
+        from research_agent.tools._registry import validate_payload_contract
+
+        payload = task["payload"] if isinstance(task.get("payload"), dict) else {}
+        contract = validate_payload_contract(kind_name, payload)
+        if not contract.valid:
+            emit(
+                job,
+                "ERROR",
+                "loop",
+                "connector_contract_rejected",
+                {
+                    "stage": "dispatch",
+                    "task_id": task.get("id"),
+                    "kind": kind_name,
+                    "errors": list(contract.errors),
+                    "message": contract.repair_message,
+                },
+            )
+            raise FatalError(contract.repair_message)
+        if contract.repaired:
+            emit(
+                job,
+                "INFO",
+                "loop",
+                "connector_contract_repaired",
+                {
+                    "stage": "dispatch",
+                    "task_id": task.get("id"),
+                    "kind": kind_name,
+                    "before": payload,
+                    "after": contract.payload,
+                },
+            )
+        payload = contract.payload
         mod = import_module(f"research_agent.tools.{module_name}")
-        payload = task["payload"]
-        _deep_load_skills_for_connector(job, module_name, payload)
+        _deep_load_skills_for_connector(job, skill_name, payload)
         kwargs = {
             k: v for k, v in payload.items() if k in _CONNECTOR_SEARCH_PASSTHROUGH
         }
@@ -406,7 +447,7 @@ def _make_connector_search_handler(module_name: str) -> Handler:
     return _handler
 
 
-def _make_connector_fetch_handler(module_name: str) -> Handler:
+def _make_connector_fetch_handler(entry: Any) -> Handler:
     """Build a thin fetch-handler that dispatches to ``tools.<module_name>.fetch``.
 
     Mirrors :func:`_make_connector_search_handler` but for the single-URL
@@ -418,12 +459,15 @@ def _make_connector_fetch_handler(module_name: str) -> Handler:
     enters via the search or fetch side.
     """
 
+    module_name = str(entry.module_name)
+    skill_name = entry.skill_name
+
     async def _handler(job: Job, task: dict[str, Any]) -> dict[str, Any]:
         from importlib import import_module
 
         mod = import_module(f"research_agent.tools.{module_name}")
         payload = task["payload"]
-        _deep_load_skills_for_connector(job, module_name, payload)
+        _deep_load_skills_for_connector(job, skill_name, payload)
         url = payload.get("url")
         if not url:
             raise FatalError(f"{module_name}_fetch: missing url field")
@@ -436,16 +480,17 @@ def _make_connector_fetch_handler(module_name: str) -> Handler:
     return _handler
 
 
-def _registered_connector_module_names() -> tuple[str, ...]:
-    """Return the connector ``module_name`` for every registered direct kind.
+def _registered_connector_entries() -> tuple[Any, ...]:
+    """Return every registered direct-connector entry.
 
     Replaces the hand-maintained ``_CONNECTOR_KINDS`` tuple. The order is
-    deterministic (alphabetical) per :func:`iter_kinds`. Used by the handler
-    registry below to wire one ``<x>_search``/``<x>_fetch`` pair per kind.
+    deterministic (alphabetical) per :func:`iter_kinds`. Handler registration
+    uses ``entry.name`` for task kinds and ``entry.module_name`` for imports,
+    so short-name/module-name mismatches do not break dispatch.
     """
     from research_agent.tools._registry import iter_kinds
 
-    return tuple(entry.short_name for entry in iter_kinds())
+    return tuple(iter_kinds())
 
 
 def default_handlers(router: Any) -> dict[str, Handler]:
@@ -637,9 +682,9 @@ def default_handlers(router: Any) -> dict[str, Handler]:
     }
     _annotate_heuristic_handler(_synthesize, tier="frontier", router=router)
     _annotate_heuristic_handler(_critique, tier="frontier_alt", router=router)
-    for name in _registered_connector_module_names():
-        registry[f"{name}_search"] = _make_connector_search_handler(name)
-        registry[f"{name}_fetch"] = _make_connector_fetch_handler(name)
+    for entry in _registered_connector_entries():
+        registry[entry.name] = _make_connector_search_handler(entry)
+        registry[entry.name.replace("_search", "_fetch")] = _make_connector_fetch_handler(entry)
     return registry
 
 

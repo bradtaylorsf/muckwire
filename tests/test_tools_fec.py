@@ -13,6 +13,7 @@ import httpx
 import pytest
 
 from research_agent.tools import fec
+from research_agent.tools._registry import validate_payload_contract
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -38,6 +39,54 @@ def cache_dir(tmp_path: Path, monkeypatch) -> Path:
     target = tmp_path / "fec-cache"
     monkeypatch.setattr(fec, "_CACHE_DIR", target)
     return target
+
+
+def test_payload_contract_repairs_empty_query_candidate_enumeration() -> None:
+    result = validate_payload_contract(
+        "fec_search",
+        {
+            "query": "",
+            "sub_question": "Enumerate 2026 California House candidates",
+            "cycle": 2026,
+            "office": "House",
+            "state": "California",
+        },
+    )
+
+    assert result.valid is True
+    assert result.repaired is True
+    assert result.payload["kind"] == "candidates_enumerate"
+    assert result.payload["office"] == "H"
+    assert result.payload["state"] == "CA"
+
+
+def test_payload_contract_rejects_empty_query_non_enumeration() -> None:
+    result = validate_payload_contract(
+        "fec_search",
+        {
+            "query": "",
+            "sub_question": "Search FEC candidates",
+            "kind": "candidates",
+        },
+    )
+
+    assert result.valid is False
+    assert "query must be non-empty" in result.repair_message
+
+
+def test_payload_contract_rejects_candidate_enumeration_without_cycle() -> None:
+    result = validate_payload_contract(
+        "fec_search",
+        {
+            "query": "",
+            "sub_question": "Enumerate House candidates",
+            "kind": "candidates_enumerate",
+            "office": "H",
+        },
+    )
+
+    assert result.valid is False
+    assert "requires cycle" in result.repair_message
 
 
 # ---------------------------------------------------------------------------

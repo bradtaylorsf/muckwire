@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import json
 from pathlib import Path
 from typing import Any
@@ -11,6 +12,7 @@ import pytest
 from research_agent.orchestrator import plan as plan_module
 from research_agent.orchestrator.errors import FatalError, RetriableError
 from research_agent.orchestrator.loop import (
+    _CONNECTOR_SEARCH_PASSTHROUGH,
     HEURISTIC_CHECK_EVERY_N,
     MAX_DRAIN_REPLANS,
     MAX_TASKS_PER_JOB,
@@ -697,6 +699,36 @@ def test_module_constants_match_spec() -> None:
     assert RETRY_MAX_ATTEMPTS == 5
 
 
+def test_connector_search_passthrough_covers_registered_payload_contracts() -> None:
+    """Every connector-accepted schema knob must survive dispatch filtering."""
+    import research_agent.tools  # noqa: F401 - populate registry
+    from research_agent.tools._registry import iter_kinds
+
+    base_fields = {"query", "sub_question"}
+    missing: list[tuple[str, str]] = []
+    for entry in iter_kinds():
+        schema_fields = set(entry.payload_schema.model_fields) - base_fields
+        sig = inspect.signature(entry.search_fn)
+        accepts_var_kw = any(
+            p.kind is inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()
+        )
+        accepted = {
+            name
+            for name, param in sig.parameters.items()
+            if param.kind
+            in (
+                inspect.Parameter.KEYWORD_ONLY,
+                inspect.Parameter.POSITIONAL_OR_KEYWORD,
+            )
+        }
+        for field in sorted(schema_fields):
+            accepted_by_connector = accepts_var_kw or field in accepted
+            if accepted_by_connector and field not in _CONNECTOR_SEARCH_PASSTHROUGH:
+                missing.append((entry.name, field))
+
+    assert missing == []
+
+
 CONNECTOR_KIND_PREFIXES: tuple[str, ...] = (
     "congress",
     "fec",
@@ -757,6 +789,28 @@ _CONNECTOR_SOURCE_KIND["openlibrary"] = "openlibrary_search"
 _CONNECTOR_SOURCE_KIND["persee"] = "persee_search"
 _CONNECTOR_SOURCE_KIND["si"] = "si_search"
 _CONNECTOR_SOURCE_KIND["bne"] = "bne_search"
+
+
+def _connector_module(prefix: str) -> Any:
+    """Return the implementation module registered for ``<prefix>_search``."""
+    import importlib
+
+    import research_agent.tools  # noqa: F401 — ensure registration ran
+    from research_agent.tools._registry import get_kind
+
+    entry = get_kind(f"{prefix}_search")
+    assert entry is not None
+    return importlib.import_module(f"research_agent.tools.{entry.module_name}")
+
+
+def _valid_connector_search_payload(prefix: str) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "query": "needle",
+        "sub_question": "What relevant records mention needle?",
+    }
+    if prefix == "state_election":
+        payload["state"] = "CA"
+    return payload
 
 
 def test_default_handlers_covers_every_task_kind() -> None:
@@ -987,9 +1041,7 @@ async def test_connector_search_handler_dispatches_to_module(
     """Each ``<prefix>_search`` handler must call ``tools.<prefix>.search`` and
     expand top hits into ``web_fetch`` follow-ups via the standard helper.
     """
-    import importlib
-
-    mod = importlib.import_module(f"research_agent.tools.{prefix}")
+    mod = _connector_module(prefix)
     captured: dict[str, Any] = {}
 
     sk = _CONNECTOR_SOURCE_KIND[prefix]
@@ -1018,12 +1070,10 @@ async def test_connector_search_handler_dispatches_to_module(
     handler = handlers[f"{prefix}_search"]
     out = await handler(
         job,
-        {"kind": f"{prefix}_search", "payload": {"query": "needle", "kind": "x"}},
+        {"kind": f"{prefix}_search", "payload": _valid_connector_search_payload(prefix)},
     )
 
     assert captured["query"] == "needle"
-    # ``kind`` is in the passthrough allowlist so it reaches the connector.
-    assert captured["kwargs"].get("kind") == "x"
     assert isinstance(out, dict)
     assert "results" in out
     assert "follow_up_tasks" in out
@@ -1040,12 +1090,11 @@ async def test_connector_fetch_handler_dispatches_to_module(
     """Each ``<prefix>_fetch`` handler must call ``tools.<prefix>.fetch`` and
     persist the returned :class:`Source` via the shared helper.
     """
-    import importlib
     from datetime import UTC, datetime
 
     from research_agent.tools.models import Source
 
-    mod = importlib.import_module(f"research_agent.tools.{prefix}")
+    mod = _connector_module(prefix)
     captured: dict[str, Any] = {}
 
     sk = _CONNECTOR_SOURCE_KIND[prefix]
@@ -1100,7 +1149,14 @@ async def test_connector_search_handler_wraps_runtime_error_as_fatal(
     handler = default_handlers(router=None)["linkedin_search"]
     with pytest.raises(FatalError, match="LINKEDIN_DATA_API_KEY"):
         await handler(
-            job, {"kind": "linkedin_search", "payload": {"query": "Sundar Pichai"}}
+            job,
+            {
+                "kind": "linkedin_search",
+                "payload": {
+                    "query": "Sundar Pichai",
+                    "sub_question": "What LinkedIn profile evidence exists?",
+                },
+            },
         )
 
 
@@ -1152,7 +1208,14 @@ async def test_connector_search_handler_does_not_wrap_unrelated_runtime_error(
     handler = default_handlers(router=None)["congress_search"]
     with pytest.raises(RuntimeError) as excinfo:
         await handler(
-            job, {"kind": "congress_search", "payload": {"query": "needle"}}
+            job,
+            {
+                "kind": "congress_search",
+                "payload": {
+                    "query": "needle",
+                    "sub_question": "What congressional records mention needle?",
+                },
+            },
         )
     assert not isinstance(excinfo.value, FatalError)
     assert bug_message in str(excinfo.value)
@@ -1441,6 +1504,7 @@ async def test_connector_search_handler_drops_kwargs_connector_does_not_accept(
             "kind": "edgar_search",
             "payload": {
                 "query": "cybersecurity",
+                "sub_question": "What SEC filings mention cybersecurity?",
                 "kind": "should-be-dropped",  # edgar takes form_type, not kind
                 "form_type": "8-K",
                 "max_results": 5,
@@ -1482,6 +1546,7 @@ async def test_loc_search_handler_passes_collection_and_page_through(
             "kind": "loc_search",
             "payload": {
                 "query": "pullman strike",
+                "sub_question": "What LOC records mention the Pullman strike?",
                 "collection": "chronicling-america",
                 "page": 2,
                 "max_results": 5,
