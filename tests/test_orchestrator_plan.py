@@ -458,6 +458,36 @@ def _read_event_kinds(db_path: Path, job_id: str) -> list[str]:
     return [r["kind"] for r in rows]
 
 
+def _read_events_by_kind(db_path: Path, job_id: str, kind: str) -> list[dict[str, Any]]:
+    conn = db.connect(db_path)
+    try:
+        rows = conn.execute(
+            "SELECT level, actor, kind, payload_json"
+            " FROM events WHERE job_id = ? AND kind = ? ORDER BY id ASC",
+            (job_id, kind),
+        ).fetchall()
+    finally:
+        conn.close()
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        item = dict(row)
+        item["payload"] = json.loads(item.pop("payload_json"))
+        out.append(item)
+    return out
+
+
+def _read_task_rows(db_path: Path, job_id: str) -> list[dict[str, Any]]:
+    conn = db.connect(db_path)
+    try:
+        rows = conn.execute(
+            "SELECT kind, payload_json FROM tasks WHERE job_id = ? ORDER BY id ASC",
+            (job_id,),
+        ).fetchall()
+    finally:
+        conn.close()
+    return [dict(row) for row in rows]
+
+
 def test_initial_plan_writes_v1_row_and_emits_event(
     job: Job,
     db_path: Path,
@@ -480,6 +510,32 @@ def test_initial_plan_writes_v1_row_and_emits_event(
     assert persisted["objective"] == result.objective
 
     assert "plan_created" in _read_event_kinds(db_path, job.id)
+
+
+def test_enqueue_plan_tasks_rejects_malformed_direct_connector_payload(
+    job: Job,
+    db_path: Path,
+) -> None:
+    plan = Plan(
+        version=1,
+        objective="Reject malformed connector task.",
+        subgoals=[Subgoal(id=1, description="Check connector contract")],
+        task_template=[
+            TaskSpec(kind="scholar_search", payload={"query": "Section 230"})
+        ],
+        expected_iterations=1,
+    )
+
+    inserted = plan_module._enqueue_plan_tasks(job, plan)
+
+    assert inserted == []
+    assert _read_task_rows(db_path, job.id) == []
+    events = _read_events_by_kind(db_path, job.id, "connector_payload_rejected")
+    assert len(events) == 1
+    payload = events[0]["payload"]
+    assert payload["stage"] == "enqueue"
+    assert payload["kind"] == "scholar_search"
+    assert "sub_question" in payload["error"]
 
 
 def test_initial_plan_renders_planner_prompt_with_goal(

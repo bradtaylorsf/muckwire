@@ -195,6 +195,7 @@ def _make_job(tmp_path: Path) -> tuple[Job, Plan]:
                 kind="fec_search",
                 payload={
                     "query": "",
+                    "sub_question": "Enumerate FEC-filed 2026 CA-01 House candidates.",
                     "kind": "candidates_enumerate",
                     "cycle": 2026,
                     "office": "H",
@@ -208,6 +209,7 @@ def _make_job(tmp_path: Path) -> tuple[Job, Plan]:
                 kind="fec_search",
                 payload={
                     "query": "",
+                    "sub_question": "Enumerate FEC-filed 2026 Florida Senate candidates.",
                     "kind": "candidates_enumerate",
                     "cycle": 2026,
                     "office": "S",
@@ -220,6 +222,7 @@ def _make_job(tmp_path: Path) -> tuple[Job, Plan]:
                 kind="state_election_search",
                 payload={
                     "query": "House",
+                    "sub_question": "Enumerate official Colorado 2026 House candidate rows.",
                     "cycle": 2026,
                     "state": "CO",
                     "office": "House",
@@ -230,6 +233,7 @@ def _make_job(tmp_path: Path) -> tuple[Job, Plan]:
                 kind="state_election_search",
                 payload={
                     "query": "2026 U.S. House candidates",
+                    "sub_question": "Confirm whether Maryland 2026 House candidate rows are public.",
                     "cycle": 2026,
                     "state": "MD",
                     "office": "House",

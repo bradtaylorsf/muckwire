@@ -26,7 +26,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, ValidationError
 
 
 SearchFn = Callable[..., Awaitable[Any]]
@@ -165,6 +165,36 @@ def validate_payload(name: str, payload: dict[str, Any]) -> BaseModel:
     return entry.payload_schema.model_validate(payload)
 
 
+def payload_validation_summary(exc: Exception) -> str:
+    """Return a compact, event-safe summary for registry payload errors."""
+    if isinstance(exc, ValidationError):
+        parts: list[str] = []
+        for err in exc.errors():
+            loc = ".".join(str(part) for part in err.get("loc", ())) or "payload"
+            msg = str(err.get("msg") or "invalid")
+            parts.append(f"{loc}: {msg}")
+        return "; ".join(parts) or str(exc)
+    return str(exc)
+
+
+def direct_payload_validation_error(
+    name: str,
+    payload: dict[str, Any],
+) -> str | None:
+    """Return an error summary for registered direct connector payloads.
+
+    Unknown names return ``None`` so callers can use this as a light guard
+    around mixed task queues without needing a separate registry lookup.
+    """
+    if name not in _REGISTRY:
+        return None
+    try:
+        validate_payload(name, payload)
+    except (RegistryError, ValidationError) as exc:
+        return payload_validation_summary(exc)
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Planner-prompt rendering helpers.
 # ---------------------------------------------------------------------------
@@ -242,8 +272,10 @@ __all__ = [
     "KindEntry",
     "RegistryError",
     "get_kind",
+    "direct_payload_validation_error",
     "is_registered",
     "iter_kinds",
+    "payload_validation_summary",
     "register_kind",
     "registered_skill_pairs",
     "render_direct_kinds_table",

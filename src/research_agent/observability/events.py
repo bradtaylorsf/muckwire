@@ -84,6 +84,7 @@ EventKind = Literal[
     "cornerstone_query_run",
     "cornerstone_dedup",
     "cornerstone_followups_emitted",
+    "connector_payload_rejected",
     "translation_skipped_budget",
     "second_order_fanout",
     "source_list_reconciled",

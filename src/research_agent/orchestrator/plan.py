@@ -550,6 +550,14 @@ def _emit_plan_created(job: Job, plan: Plan, *, tier: str, kind: str) -> None:
     )
 
 
+def _direct_connector_payload_error(kind: str, payload: dict[str, Any]) -> str | None:
+    """Return a validation error for registered direct connector payloads."""
+    import research_agent.tools  # noqa: F401 - populate the connector registry
+    from research_agent.tools._registry import direct_payload_validation_error
+
+    return direct_payload_validation_error(kind, payload)
+
+
 def _enqueue_plan_tasks(job: Job, plan: Plan) -> list[int]:
     """Persist ``plan.task_template`` into the tasks queue.
 
@@ -582,7 +590,31 @@ def _enqueue_plan_tasks(job: Job, plan: Plan) -> list[int]:
         ]
     else:
         specs = list(plan.task_template)
-    return enqueue(job, specs, plan.version)
+
+    valid_specs: list[TaskSpec] = []
+    for spec in specs:
+        error = _direct_connector_payload_error(spec.kind, spec.payload)
+        if error is not None:
+            emit(
+                job,
+                "WARN",
+                "planner",
+                "connector_payload_rejected",
+                {
+                    "stage": "enqueue",
+                    "kind": spec.kind,
+                    "plan_version": plan.version,
+                    "error": error,
+                    "payload_keys": sorted(str(k) for k in spec.payload),
+                    "repairable": True,
+                },
+            )
+            continue
+        valid_specs.append(spec)
+
+    if not valid_specs:
+        return []
+    return enqueue(job, valid_specs, plan.version)
 
 
 def _apply_planner_gap_reasons(job: Job, plan: Plan) -> Plan:

@@ -444,7 +444,6 @@ _register_kind(
     search_fn=search,
     fetch_fn=fetch,
     host_patterns=("scholar.google.com",),
-    skill_name=None,
     description="Google Scholar via SerpAPI — requires `SERPAPI_KEY`",
     optional_payload_knobs="`kind: case_law\\|articles`",
     example_query="Section 230 appellate",

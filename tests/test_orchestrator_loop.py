@@ -976,8 +976,11 @@ async def test_connector_search_handler_dispatches_to_module(
     expand top hits into ``web_fetch`` follow-ups via the standard helper.
     """
     import importlib
+    from research_agent.tools._registry import get_kind
 
-    mod = importlib.import_module(f"research_agent.tools.{prefix}")
+    entry = get_kind(f"{prefix}_search")
+    module_name = entry.module_name if entry is not None else prefix
+    mod = importlib.import_module(f"research_agent.tools.{module_name}")
     captured: dict[str, Any] = {}
 
     sk = _CONNECTOR_SOURCE_KIND[prefix]
@@ -1004,9 +1007,19 @@ async def test_connector_search_handler_dispatches_to_module(
 
     handlers = default_handlers(router=None)
     handler = handlers[f"{prefix}_search"]
+    payload = {
+        "query": "needle",
+        "sub_question": f"Find {prefix} records for needle.",
+        "kind": "x",
+    }
+    if prefix == "state_election":
+        payload["state"] = "CA"
     out = await handler(
         job,
-        {"kind": f"{prefix}_search", "payload": {"query": "needle", "kind": "x"}},
+        {
+            "kind": f"{prefix}_search",
+            "payload": payload,
+        },
     )
 
     assert captured["query"] == "needle"
@@ -1031,9 +1044,12 @@ async def test_connector_fetch_handler_dispatches_to_module(
     import importlib
     from datetime import UTC, datetime
 
+    from research_agent.tools._registry import get_kind
     from research_agent.tools.models import Source
 
-    mod = importlib.import_module(f"research_agent.tools.{prefix}")
+    entry = get_kind(f"{prefix}_search")
+    module_name = entry.module_name if entry is not None else prefix
+    mod = importlib.import_module(f"research_agent.tools.{module_name}")
     captured: dict[str, Any] = {}
 
     sk = _CONNECTOR_SOURCE_KIND[prefix]
@@ -1088,8 +1104,89 @@ async def test_connector_search_handler_wraps_runtime_error_as_fatal(
     handler = default_handlers(router=None)["linkedin_search"]
     with pytest.raises(FatalError, match="LINKEDIN_DATA_API_KEY"):
         await handler(
-            job, {"kind": "linkedin_search", "payload": {"query": "Sundar Pichai"}}
+            job,
+            {
+                "kind": "linkedin_search",
+                "payload": {
+                    "query": "Sundar Pichai",
+                    "sub_question": "Profile facts for Sundar Pichai",
+                },
+            },
         )
+
+
+@pytest.mark.asyncio
+async def test_connector_search_handler_rejects_malformed_payload_before_call(
+    job: Job,
+    db_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Malformed direct connector tasks fail before a paid/API call is made."""
+    from research_agent.tools import linkedin
+
+    called = False
+
+    async def fake_search(query: str, **kwargs: Any) -> list[SearchResult]:
+        nonlocal called
+        called = True
+        return []
+
+    monkeypatch.setattr(linkedin, "search", fake_search)
+
+    handler = default_handlers(router=None)["linkedin_search"]
+    with pytest.raises(FatalError, match="sub_question"):
+        await handler(
+            job,
+            {
+                "id": 123,
+                "plan_version": 1,
+                "kind": "linkedin_search",
+                "payload": {"query": "Sundar Pichai"},
+            },
+        )
+
+    assert called is False
+    events = _read_events_by_kind(db_path, job.id, "connector_payload_rejected")
+    assert len(events) == 1
+    payload = events[0]["payload"]
+    assert payload["stage"] == "dispatch"
+    assert payload["kind"] == "linkedin_search"
+    assert payload["task_id"] == 123
+
+
+@pytest.mark.asyncio
+async def test_connector_handler_loads_registered_skill_name(
+    job: Job,
+    db_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Task-kind aliases load the registry skill, not a guessed module name."""
+    from research_agent.skills.loader import clear_cache
+    from research_agent.tools import smithsonian
+
+    clear_cache()
+
+    async def fake_search(query: str, **kwargs: Any) -> list[SearchResult]:
+        return []
+
+    monkeypatch.setattr(smithsonian, "search", fake_search)
+
+    handler = default_handlers(router=None)["si_search"]
+    await handler(
+        job,
+        {
+            "kind": "si_search",
+            "payload": {
+                "query": "Apollo 11",
+                "sub_question": "Find Smithsonian Apollo 11 objects.",
+            },
+        },
+    )
+
+    events = _read_events_by_kind(db_path, job.id, "skill_loaded")
+    names = [event["payload"]["name"] for event in events]
+    assert "smithsonian" in names
+    assert "si" not in names
 
 
 @pytest.mark.asyncio
@@ -1140,7 +1237,14 @@ async def test_connector_search_handler_does_not_wrap_unrelated_runtime_error(
     handler = default_handlers(router=None)["congress_search"]
     with pytest.raises(RuntimeError) as excinfo:
         await handler(
-            job, {"kind": "congress_search", "payload": {"query": "needle"}}
+            job,
+            {
+                "kind": "congress_search",
+                "payload": {
+                    "query": "needle",
+                    "sub_question": "Find congressional records matching needle",
+                },
+            },
         )
     assert not isinstance(excinfo.value, FatalError)
     assert bug_message in str(excinfo.value)
@@ -1429,6 +1533,7 @@ async def test_connector_search_handler_drops_kwargs_connector_does_not_accept(
             "kind": "edgar_search",
             "payload": {
                 "query": "cybersecurity",
+                "sub_question": "Find cybersecurity 8-K filings",
                 "kind": "should-be-dropped",  # edgar takes form_type, not kind
                 "form_type": "8-K",
                 "max_results": 5,
@@ -1470,6 +1575,7 @@ async def test_loc_search_handler_passes_collection_and_page_through(
             "kind": "loc_search",
             "payload": {
                 "query": "pullman strike",
+                "sub_question": "Find Library of Congress Pullman Strike sources",
                 "collection": "chronicling-america",
                 "page": 2,
                 "max_results": 5,

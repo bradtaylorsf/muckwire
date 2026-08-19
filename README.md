@@ -142,7 +142,7 @@ from `src/research_agent/tools/_registry.py` via
 | `opencorporates_search` | Global company registry — requires `OPENCORPORATES_API_KEY` | `jurisdiction: us_ca\|gb\|...` | `Acme Holdings` |
 | `openlibrary_search` | Open Library book metadata, ISBN/OCLC/LCCN identifiers, and Internet Archive scan IDs through search.json | `max_results` | `Pullman Strike 1894` |
 | `persee_search` | Persee French academic journals in humanities and social sciences (Playwright scrape, no auth) | `max_results` | `guerre d'Algerie` |
-| `sanctions_search` | OFAC SDN + UK sanctions lists (local index, no auth) | — | `Wagner Group` |
+| `sanctions_search` | OFAC SDN + UK sanctions lists (local index, no auth) | `kinds: [SDN, UK]` | `Wagner Group` |
 | `scholar_search` | Google Scholar via SerpAPI — requires `SERPAPI_KEY` | `kind: case_law\|articles` | `Section 230 appellate` |
 | `si_search` | Smithsonian Open Access digitized collection objects, museum artifacts, images, 3D assets, and object metadata via api.data.gov | `max_results` | `Apollo 11` |
 | `sos_search` | State Secretary-of-State business entity filings (Playwright; CA wired, others stubs) | `state: CA\|DE\|NV\|...` | `Acme Corp` |

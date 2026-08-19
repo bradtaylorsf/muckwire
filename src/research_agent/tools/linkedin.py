@@ -909,7 +909,6 @@ _register_kind(
     search_fn=search,
     fetch_fn=fetch,
     host_patterns=("linkedin.com", "www.linkedin.com"),
-    skill_name=None,
     description=(
         "LinkedIn person/company lookup via Proxycurl or Lix — requires"
         " broker key"

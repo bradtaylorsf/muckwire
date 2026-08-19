@@ -301,11 +301,15 @@ def test_live_registry_skill_name_assignment() -> None:
         "gallica_search": "gallica",
         "iarchive_search": "iarchive",
         "iwm_search": "iwm",
+        "linkedin_search": "linkedin",
         "loc_search": "loc",
         "nara_search": "nara",
         "openalex_search": "openalex",
         "openlibrary_search": "openlibrary",
+        "opencorporates_search": "opencorporates",
         "persee_search": "persee",
+        "sanctions_search": "sanctions",
+        "scholar_search": "scholar",
         "si_search": "smithsonian",
         "state_election_search": "state_election",
         "trove_search": "trove",
@@ -313,3 +317,19 @@ def test_live_registry_skill_name_assignment() -> None:
         "wikidata_search": "wikidata",
         "wikisource_search": "wikisource",
     }
+
+
+def test_sanctions_registry_payload_schema_exposes_kinds() -> None:
+    """The planner-visible sanctions contract must include the list filter."""
+    import research_agent.tools  # noqa: F401
+
+    parsed = validate_payload(
+        "sanctions_search",
+        {
+            "query": "Wagner Group",
+            "sub_question": "Sanctions screening",
+            "kinds": ["SDN", "UK"],
+        },
+    )
+
+    assert parsed.model_dump()["kinds"] == ["SDN", "UK"]

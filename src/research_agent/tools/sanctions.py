@@ -1095,6 +1095,7 @@ KIND = "sanctions_search"
 
 class _PayloadSchema(_BaseSearchPayload):
     max_results: int | None = None
+    kinds: list[str] | None = None
 
 
 _register_kind(
@@ -1107,9 +1108,8 @@ _register_kind(
         "home.treasury.gov",
         "webgate.ec.europa.eu",
     ),
-    skill_name=None,
     description="OFAC SDN + UK sanctions lists (local index, no auth)",
-    optional_payload_knobs="—",
+    optional_payload_knobs="`kinds: [SDN, UK]`",
     example_query="Wagner Group",
     module_name="sanctions",
 )
